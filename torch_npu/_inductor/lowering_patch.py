@@ -280,6 +280,7 @@ def _get_inductor_attr_baseline():
 
     Scheduler = inductor_scheduler.Scheduler
     _INDUCTOR_ATTR_BASELINE = (
+        _snapshot_inductor_attr(Scheduler, "create_foreach_nodes"),
         _snapshot_inductor_attr(Scheduler, "_codegen"),
         _snapshot_inductor_attr(Scheduler, "compute_ancestors"),
         _snapshot_inductor_attr(inductor_scheduler, "_prune_redundant_deps"),

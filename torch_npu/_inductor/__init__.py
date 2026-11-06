@@ -384,10 +384,18 @@ def _load_triton_experimental_backend():
     from .triton_experimental import _activate
     _activate()
 
+def _load_tilelang_backend():
+    _apply_common_patches()
+    from .tilelang import initialize_tilelang_backend
+
+    initialize_tilelang_backend()
+
+
 _BACKEND_LOADERS = {
     "mlir": _load_mlir_backend,
     "dvm": _load_dvm_backend,
     "ascendc": _load_ascendc_backend,
+    "tilelang": _load_tilelang_backend,
     "default": _load_triton_backend,
     "triton_experimental": _load_triton_experimental_backend,
 }

@@ -35,6 +35,15 @@ def patch_has_triton():
     compile_fx.has_triton = has_triton
 
 
+def disable_foreach():
+    from torch._inductor.scheduler import Scheduler
+
+    def create_foreach_nodes(self):
+        return
+
+    Scheduler.create_foreach_nodes = create_foreach_nodes
+
+
 def patch_device_supports_tma():
     @functools.lru_cache(None)
     def _device_supports_tma():

@@ -635,6 +635,8 @@ class TestPublicBindings(TestCase):
             "torch_npu._inductor.runtime.tile_generator",
             "torch_npu._inductor.codegen.triton",
             "torch_npu._inductor.codegen.triton_utils",
+            "torch_npu._inductor.tilelang.codegen.tilelang_kernel",
+            "torch_npu._inductor.tilelang.codegen.tilelang_scheduling",
             "torch_npu._inductor.codegen.wrapper",
             "torch_npu._inductor.codecache",
             "torch_npu._inductor.cpp_builder",

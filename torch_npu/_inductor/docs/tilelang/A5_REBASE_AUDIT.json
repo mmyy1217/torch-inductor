@@ -1,0 +1,42 @@
+{
+  "kind": "static audit only; no imports or NPU execution",
+  "head": "4e7846b32e1a28f37d54debb268584438d0698c3",
+  "base": "v26.2.0-pytorch2.14.0",
+  "syntax_checked_files": [
+    "test/_inductor/tilelang/benchmark_tilelang_layernorm.py",
+    "test/_inductor/tilelang/benchmark_tilelang_softmax.py",
+    "test/_inductor/tilelang/test_tilelang_broadcast.py",
+    "test/_inductor/tilelang/test_tilelang_mixed.py",
+    "test/_inductor/tilelang/test_tilelang_ops.py",
+    "test/_inductor/tilelang/tilelang_test_utils.py",
+    "test/npu/test_public_bindings.py",
+    "torch_npu/_inductor/__init__.py",
+    "torch_npu/_inductor/tilelang/__init__.py",
+    "torch_npu/_inductor/tilelang/codegen/__init__.py",
+    "torch_npu/_inductor/tilelang/codegen/tilelang_kernel.py",
+    "torch_npu/_inductor/tilelang/codegen/tilelang_scheduling.py",
+    "torch_npu/_inductor/utils.py"
+  ],
+  "local_import_findings": [
+    {
+      "file": "torch_npu/_inductor/tilelang/__init__.py",
+      "line": 11,
+      "module": "torch_npu._inductor.codegen.wrapper",
+      "symbol": "NPUWrapperCodeGen",
+      "issue": "not statically defined/exported"
+    },
+    {
+      "file": "torch_npu/_inductor/tilelang/__init__.py",
+      "line": 12,
+      "module": "torch_npu._inductor.decomposition",
+      "symbol": "_register_npu_inductor_decompositions",
+      "issue": "not statically defined/exported"
+    },
+    {
+      "file": "torch_npu/_inductor/tilelang/codegen/tilelang_kernel.py",
+      "line": 69,
+      "module": "torch_npu._inductor.codegen.tile_generator",
+      "issue": "missing module"
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "recorded_at": "2026-11-06T08:39:15Z",
+  "status": "passed",
+  "environment": {
+    "torch": "2.14.0+cpu",
+    "torch_file": "/home/yja/experiments/tilelang-backend-a5-20261106/env/lib/python3.11/site-packages/torch/__init__.py",
+    "torch_npu": "2.14.0+gita864ba5",
+    "torch_npu_file": "/home/yja/experiments/tilelang-backend-a5-20261106/env/lib/python3.11/site-packages/torch_npu/__init__.py",
+    "tilelang_file": "/home/yja/experiments/tilelang-backend-a5-20261106/tilelang/tilelang/__init__.py",
+    "device": 0,
+    "limits": {
+      "cube_core_num": 32,
+      "vector_core_num": 64
+    },
+    "ascend_home": "/home/yja/envs/tilelang-950/Ascend/cann-9.2.0",
+    "tilelang_sha": "64b52b4b1a505ba93e6e49a35cc0c5dc2a4b020d",
+    "pytorch_sha": "15b290a828ffc5b8a5846e7b738f13acc5af1263",
+    "python_overlay": {
+      "base_source_wheel": "a864ba51a2aa150c2ebe9625eaaef164e7d797bd",
+      "source_sha": "15b290a828ffc5b8a5846e7b738f13acc5af1263",
+      "installed_dir": "/home/yja/experiments/tilelang-backend-a5-20261106/env/lib/python3.11/site-packages/torch_npu",
+      "files": {
+        "torch_npu/_inductor/decomposition.py": "2e0b7eff1e07e2421d6a6198905ccbd90483b2a69fd96f2ecd2437e459afe5ff",
+        "torch_npu/_inductor/tilelang/codegen/ascend.py": "f693381745d7b940c8e512fe8b741d8f8a87d103eb81a64ff9a4c0526fec68d9",
+        "torch_npu/_inductor/tilelang/codegen/tilelang_kernel.py": "5e2a4749b5dbe6299ee80b6fb4fc5ce8afb8ea71cbc886734c0560b91ed06800"
+      }
+    }
+  },
+  "unittest_summary": {
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "tilelang_compile_calls": 15
+  },
+  "passed_cases": [
+    "float32:1,64,257,2051",
+    "float16:1,64,257,2051",
+    "bfloat16:1,64,257,2051",
+    "float32:257:multi_output",
+    "float32:257:scalar_broadcast"
+  ],
+  "compute_case_count": 14,
+  "additional_checks": [
+    "direct PrimFunc caller-owned output",
+    "backend switch and foreach restore",
+    "every compute case repeated with changed inputs",
+    "no Triton or ATen fallback in generated wrappers"
+  ],
+  "guard": {
+    "acquired_at": "2026-11-06T08:31:13.908035Z",
+    "finished_at": "2026-11-06T08:36:38.160917Z",
+    "workload_exit_code": 0,
+    "workload_completed": true,
+    "conflict_detected": false,
+    "visibility_lost": false
+  },
+  "cpu_emitter_tests": "6/6 passed",
+  "generated_sources": [
+    {
+      "name": "a5_pointwise_fp32_size1.cpp",
+      "raw_capture_sha256": "269fb6232580c9651358f613eaf080980789a978c191564792e70d45f4c61332",
+      "repository_copy_sha256": "605bc088d050e7162ef702d7c0c17db19aa2ac32460fb4998a23a64b561cb764",
+      "normalization": "Trailing blank lines removed; kernel content unchanged"
+    },
+    {
+      "name": "a5_pointwise_scalar_broadcast_fp32_257.cpp",
+      "raw_capture_sha256": "445be45c419d2cb4c7cc1c258d1d988c63489e17d61fa9422f63e2b76c386810",
+      "repository_copy_sha256": "19931a8e5e243935d82729ee6b4a4c8ecb46a7b6125f30bb7c588cf60ace758d",
+      "normalization": "Trailing blank lines removed; kernel content unchanged"
+    },
+    {
+      "name": "a5_pointwise_scalar_broadcast_fp32_257.tir",
+      "raw_capture_sha256": "83174e773d065cf7e79353cb8a4c8938ddff1176314b1231eaffddabbd0663f7",
+      "repository_copy_sha256": "f19decae6a86679a57df0fa7886b3fc9c57d474fcaa0b8aefabe72d8b112f49a",
+      "normalization": "Trailing blank lines removed; kernel content unchanged"
+    }
+  ],
+  "performance_measured": false
+}

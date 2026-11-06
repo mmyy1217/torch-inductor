@@ -1,0 +1,64 @@
+{
+  "recorded_at": "2026-11-06",
+  "status": "partial_device_validation",
+  "environment": {
+    "torch": "2.14.0+cpu",
+    "torch_file": "/home/yja/experiments/tilelang-backend-a5-20261106/env/lib/python3.11/site-packages/torch/__init__.py",
+    "torch_npu": "2.14.0+gita864ba5",
+    "torch_npu_file": "/home/yja/experiments/tilelang-backend-a5-20261106/env/lib/python3.11/site-packages/torch_npu/__init__.py",
+    "tilelang_file": "/home/yja/experiments/tilelang-backend-a5-20261106/tilelang/tilelang/__init__.py",
+    "device": 0,
+    "limits": {
+      "cube_core_num": 32,
+      "vector_core_num": 64
+    },
+    "ascend_home": "/home/yja/envs/tilelang-950/Ascend/cann-9.2.0",
+    "tilelang_sha": "64b52b4b1a505ba93e6e49a35cc0c5dc2a4b020d",
+    "pytorch_sha": "7b9ff297496296b6feede537a45f68798fb30ff4",
+    "python_overlay": {
+      "base_source_wheel": "a864ba51a2aa150c2ebe9625eaaef164e7d797bd",
+      "source_sha": "7b9ff297496296b6feede537a45f68798fb30ff4",
+      "installed_dir": "/home/yja/experiments/tilelang-backend-a5-20261106/env/lib/python3.11/site-packages/torch_npu",
+      "files": {
+        "torch_npu/_inductor/decomposition.py": "2e0b7eff1e07e2421d6a6198905ccbd90483b2a69fd96f2ecd2437e459afe5ff",
+        "torch_npu/_inductor/tilelang/codegen/tilelang_kernel.py": "38cf27ce131723b6d86c470d3a655aa51100ef7c75934cf453fd887c41f5bd68"
+      }
+    }
+  },
+  "unittest_summary": {
+    "tests": 3,
+    "failures": 0,
+    "errors": 3,
+    "skipped": 0,
+    "tilelang_compile_calls": 11
+  },
+  "passed_cases": [
+    "float32:64,257,2051",
+    "float16:64,257,2051",
+    "bfloat16:64,257,2051",
+    "float32:257:multi_output"
+  ],
+  "errored_cases": [
+    "float32:1",
+    "float16:1",
+    "bfloat16:1"
+  ],
+  "latest_python_fix": "a5eb1ec34d352aa9cd6f7b100eb09369243f3ea4",
+  "latest_fix_cpu_tests": "6/6 passed",
+  "latest_fix_device_validation": "not run: device busy at preflight",
+  "generated_sources": [
+    {
+      "name": "a5_pointwise_fp32_2051.cpp",
+      "raw_capture_sha256": "2e3869b675c0937a009da1c59468536cb7c1bc0ec38443fb7af2297ec72b461f",
+      "repository_copy_sha256": "64a8bea9d4cedbe3fd478d9266ac225cb5d2f2c2604bcd2263baf6663b1105be",
+      "normalization": "Trailing blank lines removed; kernel content unchanged"
+    },
+    {
+      "name": "a5_pointwise_multi_output_fp32_257.cpp",
+      "raw_capture_sha256": "f51ca67911158f9187aedbabf4fc1bc2f269042db77b3ee5272d4d96114d78c1",
+      "repository_copy_sha256": "ec81dd948483872570cc54496281b9a488bc282dbd3fd1756c14d836ef85194d",
+      "normalization": "Trailing blank lines removed; kernel content unchanged"
+    }
+  ],
+  "performance_measured": false
+}

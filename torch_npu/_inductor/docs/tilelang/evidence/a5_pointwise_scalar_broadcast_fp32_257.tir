@@ -1,0 +1,43 @@
+# from tvm.script import tirx as T
+
+@T.prim_func
+def tilelang_fused_add_exp_mul_0_prim_fn(in_ptr0_handle: T.handle, in_ptr1_handle: T.handle, out_ptr0_handle: T.handle):
+    in_ptr0 = T.match_buffer(in_ptr0_handle, (257,), strides=(1,))
+    in_ptr1 = T.match_buffer(in_ptr1_handle, (1,), strides=(1,))
+    out_ptr0 = T.match_buffer(out_ptr0_handle, (257,), strides=(1,))
+    # with T.sblock("root"):
+    for bx in T.thread_binding(3, thread="blockIdx.x"):
+        tx: T.int32 = T.launch_thread_idx(0)
+        ty: T.int32 = T.launch_thread_idx(1)
+        tz: T.int32 = T.launch_thread_idx(2)
+        with T.sblock("tilelang_root"):
+            T.reads()
+            T.writes()
+            _in_ptr0_local = T.handle("float32", "shared.dyn")
+            _in_ptr1_local = T.handle("float32", "shared.dyn")
+            _out_ptr0_local = T.handle("float32", "shared.dyn")
+            T.sblock_attr({"tl.buffer_versions_map": {_in_ptr0_local: 1, _in_ptr1_local: 1, _out_ptr0_local: 1}})
+            _in_ptr0_local_1 = T.sblock_alloc_buffer((128,), data=_in_ptr0_local, scope="shared.dyn")
+            _in_ptr1_local_1 = T.sblock_alloc_buffer((1,), data=_in_ptr1_local, scope="shared.dyn")
+            _out_ptr0_local_1 = T.sblock_alloc_buffer((128,), data=_out_ptr0_local, scope="shared.dyn")
+            _tl_x_base: T.int32 = bx * 128
+            _tl_outer_remain: T.int32 = T.min(128, 257 - _tl_x_base)
+            for _tl_block in range((_tl_outer_remain + 127) // 128):
+                _tl_base: T.int32 = bx * 128 + _tl_block * 128
+                _remain_X: T.int32 = T.min(128, T.min(128 - _tl_block * 128, 257 - _tl_base))
+                T.ascend_copy(T.region(in_ptr0[_tl_base], 1, _remain_X), T.region(_in_ptr0_local_1[0], 2, _remain_X))
+                T.ascend_copy(T.region(in_ptr1[0], 1, 1), T.region(_in_ptr1_local_1[0], 2, 1))
+                with T.sblock("SIMT_VF", no_realize=True):
+                    T.reads()
+                    T.writes()
+                    T.sblock_attr({"tl.vf_source_index": T.int64(0)})
+                    simtvf_tx = T.launch_thread("threadIdx.x", 128)
+                    simtvf_ty = T.launch_thread("threadIdx.y", 1)
+                    simtvf_tz = T.launch_thread("threadIdx.z", 1)
+                    T.attr("simtvf", "tl.simtvf_scope", 1)
+                    for _vf_i0 in T.parallel(128):
+                        _vf_v0: T.float32 = _in_ptr0_local_1[_vf_i0] + _in_ptr1_local_1[0]
+                        _vf_v1: T.float32 = _vf_v0 * T.float32(0.25)
+                        _vf_v2: T.float32 = T.exp(_vf_v1)
+                        _out_ptr0_local_1[_vf_i0] = _vf_v2
+                T.ascend_copy(T.region(_out_ptr0_local_1[0], 1, _remain_X), T.region(out_ptr0[_tl_base], 2, _remain_X))

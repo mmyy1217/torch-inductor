@@ -1,0 +1,42 @@
+# from tvm.script import tirx as T
+
+@T.prim_func
+def tilelang_fused_add_exp_mul_0_prim_fn(in_ptr0_handle: T.handle, in_ptr1_handle: T.handle, out_ptr0_handle: T.handle):
+    in_ptr0 = T.match_buffer(in_ptr0_handle, (257,), "bfloat16", strides=(1,))
+    in_ptr1 = T.match_buffer(in_ptr1_handle, (1,), "bfloat16", strides=(1,))
+    out_ptr0 = T.match_buffer(out_ptr0_handle, (257,), "bfloat16", strides=(1,))
+    # with T.sblock("root"):
+    for bx in T.thread_binding(3, thread="blockIdx.x"):
+        tx: T.int32 = T.launch_thread_idx(0)
+        ty: T.int32 = T.launch_thread_idx(1)
+        tz: T.int32 = T.launch_thread_idx(2)
+        with T.sblock("tilelang_root"):
+            T.reads()
+            T.writes()
+            _in_ptr0_local = T.handle("bfloat16", "shared.dyn")
+            _in_ptr1_local = T.handle("bfloat16", "shared.dyn")
+            _out_ptr0_local = T.handle("bfloat16", "shared.dyn")
+            T.sblock_attr({"tl.buffer_versions_map": {_in_ptr0_local: 1, _in_ptr1_local: 1, _out_ptr0_local: 1}})
+            _in_ptr0_local_1 = T.sblock_alloc_buffer((128,), "bfloat16", data=_in_ptr0_local, scope="shared.dyn")
+            _in_ptr1_local_1 = T.sblock_alloc_buffer((1,), "bfloat16", data=_in_ptr1_local, scope="shared.dyn")
+            _out_ptr0_local_1 = T.sblock_alloc_buffer((128,), "bfloat16", data=_out_ptr0_local, scope="shared.dyn")
+            _tl_x_base: T.int32 = bx * 128
+            _tl_outer_remain: T.int32 = T.min(128, 257 - _tl_x_base)
+            for _tl_block in range((_tl_outer_remain + 127) // 128):
+                _tl_base: T.int32 = bx * 128 + _tl_block * 128
+                _remain_X: T.int32 = T.min(128, T.min(128 - _tl_block * 128, 257 - _tl_base))
+                T.ascend_copy(T.region(in_ptr0[_tl_base], 1, _remain_X), T.region(_in_ptr0_local_1[0], 2, _remain_X))
+                T.ascend_copy(T.region(in_ptr1[0], 1, 1), T.region(_in_ptr1_local_1[0], 2, 1))
+                with T.sblock("SIMD_VF", no_realize=True):
+                    T.reads()
+                    T.writes()
+                    T.sblock_attr({"tl.simdvf_lanes": T.int64(128), "tl.vf_source_index": T.int64(0)})
+                    T.attr("simdvf", "tl.simdvf_scope", 1)
+                    _vf_mask: T.boolx256 = T.tl.simd.pset(32, "PAT_ALL")
+                    for _vf_chunk in range(2):
+                        _vf_v0: T.float32x64 = T.tl.simd.vcvt(T.tl.simd.vcvt(T.tl.simd.vadd(T.tl.simd.vcvt(T.tl.simd.vcvt(T.tl.simd.vcvt(T.tl.simd.vld(T.access_ptr(_in_ptr0_local_1[_vf_chunk * 64], 64, 1), "UNPK_B16"), _vf_mask, "PART_EVEN", "MODE_ZEROING"), _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PART_EVEN", "MODE_ZEROING"), T.tl.simd.vcvt(T.tl.simd.vcvt(T.tl.simd.vcvt(T.tl.simd.vld(T.access_ptr(_in_ptr1_local_1[0], 1, 1), "BRC_B16"), _vf_mask, "PART_EVEN", "MODE_ZEROING"), _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PART_EVEN", "MODE_ZEROING"), _vf_mask, "MODE_ZEROING"), _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PART_EVEN", "MODE_ZEROING")
+                        v: T.boolx256 = T.tl.simd.pset(32, "PAT_ALL")
+                        _vf_v1: T.float32x64 = T.tl.simd.vcvt(T.tl.simd.vcvt(T.tl.simd.vmul(T.tl.simd.vcvt(T.tl.simd.vcvt(_vf_v0, _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PART_EVEN", "MODE_ZEROING"), T.tl.simd.vcvt(T.tl.simd.vcvt(T.tl.simd.vdup(T.float32(0.25), v, "MODE_ZEROING"), _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PART_EVEN", "MODE_ZEROING"), _vf_mask, "MODE_ZEROING"), _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PART_EVEN", "MODE_ZEROING")
+                        _vf_v2: T.float32x64 = T.tl.simd.vexp(_vf_v1, _vf_mask, "MODE_ZEROING")
+                        T.tl.simd.vsts(T.access_ptr(_out_ptr0_local_1[_vf_chunk * 64], 64, 2), T.tl.simd.vcvt(_vf_v2, _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PK_B32")
+                T.ascend_copy(T.region(_out_ptr0_local_1[0], 1, _remain_X), T.region(out_ptr0[_tl_base], 2, _remain_X))

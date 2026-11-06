@@ -46,10 +46,12 @@ class TestAscendPointwise(TileLangInductorTest):
         self.check_a5(fn, (torch.randn(257, device="npu"), torch.randn(257, device="npu")))
 
     def test_scalar_broadcast(self):
-        self.check_a5(
-            lambda x, y: torch.exp((x + y) * 0.25),
-            (torch.randn(257, device="npu"), torch.randn(1, device="npu")),
-        )
+        for dtype in (torch.float32, torch.float16, torch.bfloat16):
+            with self.subTest(dtype=dtype):
+                self.check_a5(
+                    lambda x, y: torch.exp((x + y) * 0.25),
+                    (torch.randn(257, device="npu", dtype=dtype), torch.randn(1, device="npu", dtype=dtype)),
+                )
 
     def check_a5(self, fn, args):
         from torch._inductor.utils import run_and_get_code
@@ -61,7 +63,10 @@ class TestAscendPointwise(TileLangInductorTest):
         self.assert_all_kernels_are_tilelang(codes)
         source = "\n".join(codes)
         self.assertIn("tilelang.ascend.language", source)
-        self.assertIn("T.SimtVF", source)
+        self.assertIn("T.SimdVF", source)
+        self.assertNotIn("T.SimtVF", source)
+        self.assertIn("T.simd.vld", source)
+        self.assertIn("T.simd.vsts", source)
         self.assertIn("target='ascend'", source)
         self.assertNotIn("target='npuir'", source)
         rtol, atol = {

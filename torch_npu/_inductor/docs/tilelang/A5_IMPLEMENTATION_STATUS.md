@@ -2,6 +2,10 @@
 
 日期：2026-11-06。开发分支：[tilelang-backend-a5](https://gitcode.com/wamdus/pytorch/tree/tilelang-backend-a5)。本文件区分已实现接口与实际验收；完整路线见 [迁移计划](A5_MIGRATION_PLAN.md)。
 
+## 最新路线：SIMD VF（2026-11-06）
+
+当前 pointwise 发射器改为 `T.SimdVF()` + 显式 `T.simd.*`。下文原 SIMT 验收与生成代码保留为历史记录；当前路线、精度/布局约束和 SIMD 验收见 [A5_SIMD_VF.md](A5_SIMD_VF.md)。现有 TileLang 发射器不生成 `SimtVF`，索引化搬运在 codegen 阶段明确拒绝；没有启用 gather 专用路由。
+
 ## 固定来源
 
 - torch_npu 发布基线：`v26.2.0-pytorch2.14.0`，`54e365d3e3614299bccd17f06916544c3880c9fc`。
@@ -16,7 +20,7 @@
 | --- | --- | --- | --- |
 | Dynamo / Inductor | `torch.compile(..., options={"npu_backend": "tilelang"})`，FX 图及 shape/stride/dtype guards | 使用发布版公共 patches，注册 TileLang scheduler、Python wrapper、decomposition | Inductor scheduler nodes、LoopBody 和参数/输出信息 |
 | TileLang 捕获与计划 | 节点 schedule、range tree、load/store 索引、标量运算及 dtype | 复用旧 typed operation/region/buffer plan；保留共享 NPU 索引分析 | `TileLangKernelPlan`：签名、launch、region、transfer、pointwise operations、buffer 元数据 |
-| A5 pointwise emitter | `PointwiseOpPlan`、输入/输出边界、tile shape、execution/result dtype | 生成 `T.SimtVF(threads=128)` 和 `T.Parallel`；内部值变为 VF 局部表达式；按 operand shape 索引广播 | Ascend DSL VF body；只将边界输出写回 UB |
+| A5 pointwise emitter | `PointwiseOpPlan`、输入/输出边界、tile shape、execution/result dtype | 生成 `T.SimdVF()`、64-lane 向量循环和 `T.simd.*`；中间值驻留向量寄存器；标量使用 BRC load | Ascend DSL VF body；只将边界输出写回 UB |
 | PrimFunc emitter | region/transfer + VF body | `tilelang.ascend.language`，一维 `T.Kernel`；边界 UB `T.alloc_shared`，显式 `T.annotate_buffer_versions(...: 1)` | 参数化 `@T.prim_func` 工厂，shape/tile 实参确定具体 PrimFunc |
 | 编译 wrapper | 具体 PrimFunc、shape 缓存键、单 buffer 配置 | `tilelang.compile(target="ascend", execution_backend="tvm_ffi", pass_configs={"tl.enable_auto_schedule": True})` | 缓存的 JIT callable；底层 native 编译由官方 TileLang 完成 |
 | 运行 | 输入 tensor 与 Inductor 已分配的输出 tensor | 普通执行不传 `out_idx`；按签名把输入/输出都传给 callable | 写入 caller-owned 输出，供 Inductor 后续节点/返回值使用 |
@@ -48,13 +52,13 @@
 python test/_inductor/tilelang/test_ascend_emitter.py
 ```
 
-2026-11-06 本地复查 6/6 通过：融合表达式且无中间 tensor storage、物理临时名复用、广播与多输出、布局拒绝、未启用运算拒绝、整数 dtype 拒绝、VF 内标量中间值广播。其中部分性质合并在同一个测试中；这些测试不导入 TileLang，不证明 native compiler 或设备正确性。
+SIMT 阶段本地复查 6/6 通过：融合表达式且无中间 tensor storage、物理临时名复用、广播与多输出、布局拒绝、未启用运算拒绝、整数 dtype 拒绝、VF 内标量中间值广播。其中部分性质合并在同一个测试中；这些测试不导入 TileLang，不证明 native compiler 或设备正确性。
 
-设备验收入口：`test/_inductor/tilelang/test_ascend_pointwise.py`。预期覆盖 float32/float16/bfloat16 × size 1/64/257/2051，以及多输出、标量输入广播；每例复用缓存 callable 再换输入运行。断言生成代码无 Triton/ATen/NPU fallback，且含 Ascend dialect 和显式 VF。
+设备验收入口：`test/_inductor/tilelang/test_ascend_pointwise.py`，现已要求显式 SIMD、禁止 SIMT。覆盖 float32/float16/bfloat16 × size 1/64/257/2051，以及多输出、标量输入广播；每例复用缓存 callable 再换输入运行。断言生成代码无 Triton/ATen/NPU fallback，且含 Ascend dialect 和显式 VF。
 
 设备测试必须在 `npu-guard` 的整个前台进程内执行，运行前实时确认空闲。初始化后、编译或分配 tensor 前，通过 `set_device_limit(0, cube_num=32, vector_num=64)` 并读取核实限核。记录源码、wheel、native library、CANN、设备、cache、generated source/IR。
 
-### 当前验收状态
+### SIMT 阶段验收历史
 
 | 项目 | 结果与对应源码 |
 | --- | --- |

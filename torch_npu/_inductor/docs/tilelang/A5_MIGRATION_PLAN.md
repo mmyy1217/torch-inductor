@@ -4,7 +4,9 @@
 
 ## 2026-11-06 实施更新
 
-用户指定：以官方 `tile-ai/tilelang` 为唯一 A5 DSL 基准；开发分支改名为 `tilelang-backend-a5`，在 GitCode 开发，通过 A5 服务器验证。下文 rebase 审计为历史起点，当前代码已开始适配三项导入变化及显式 SIMT pointwise。运行验收状态以 [实施记录](A5_IMPLEMENTATION_STATUS.md) 为准。
+用户指定：以官方 `tile-ai/tilelang` 为唯一 A5 DSL 基准；开发分支改名为 `tilelang-backend-a5`，在 GitCode 开发，通过 A5 服务器验证。下文 rebase 审计为历史起点，当前代码已开始适配三项导入变化及显式 SIMD pointwise。运行验收状态以 [实施记录](A5_IMPLEMENTATION_STATUS.md) 为准。
+
+当前 pointwise 路线已切换为显式 SIMD；参见 [SIMD 实现与验收](A5_SIMD_VF.md)。SIMT/gather 需要后续独立的路由与能力设计，不从旧索引 load 自动启用。
 
 ## 1. 当前状态与基线
 

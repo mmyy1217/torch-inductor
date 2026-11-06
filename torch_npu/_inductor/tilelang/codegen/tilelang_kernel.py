@@ -1,5 +1,5 @@
 # TileLang plan capture and code generation for the Ascend 950 backend.
-# The A5 pointwise path emits tilelang.ascend.language, explicit SIMT VFs,
+# The A5 pointwise path emits tilelang.ascend.language, explicit SIMD VFs,
 # and caller-owned outputs compiled through target="ascend".
 # Reduction planning is retained for the next migration stage.
 from __future__ import annotations
@@ -1337,19 +1337,9 @@ class TransferEmitter:
             ))
             return
         if transfer.kind == "INDEXED_LOAD":
-            if transfer.extent is None or transfer.source_index is None:
-                raise RuntimeError("INDEXED_LOAD requires extent and source_index")
-            self.code.writeline("with T.SimtVF(threads=128):")
-            with self.code.indent():
-                self.code.writeline(
-                    f"for {transfer.induction_var} in T.Parallel({transfer.extent}):"
-                )
-                with self.code.indent():
-                    self.code.writeline(
-                        f"{transfer.destination}[{transfer.induction_var}] = "
-                        f"{transfer.source}[{transfer.source_index}]"
-                    )
-            return
+            raise TileLangUnsupported(
+                "A5 transfer", "indexed loads require an explicit SIMT route; not enabled"
+            )
         raise RuntimeError(f"unknown TileLang transfer kind: {transfer.kind}")
 
 
@@ -1553,6 +1543,11 @@ class KernelProgramEmitter:
         code.writeline("")
         for statement in plan.preamble:
             code.writeline(statement)
+        if "_XBLOCK_SUB = X0BLOCK_SUB" in plan.preamble:
+            code.writeline(
+                "from torch_npu._inductor.tilelang.codegen.ascend import validate_simd_tile_width"
+            )
+            code.writeline("validate_simd_tile_width(_XBLOCK_SUB)")
         if plan.preamble:
             code.writeline("")
         SignatureEmitter(code).emit(plan.signature)

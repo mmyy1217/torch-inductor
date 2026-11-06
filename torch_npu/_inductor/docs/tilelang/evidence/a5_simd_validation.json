@@ -1,0 +1,77 @@
+{
+  "status": "passed",
+  "environment": {
+    "torch": "2.14.0+cpu",
+    "torch_file": "/home/yja/experiments/tilelang-backend-a5-20261106/env/lib/python3.11/site-packages/torch/__init__.py",
+    "torch_npu": "2.14.0+gita864ba5",
+    "torch_npu_file": "/home/yja/experiments/tilelang-backend-a5-20261106/env/lib/python3.11/site-packages/torch_npu/__init__.py",
+    "tilelang_file": "/home/yja/experiments/tilelang-backend-a5-20261106/tilelang/tilelang/__init__.py",
+    "device": 0,
+    "limits": {
+      "cube_core_num": 32,
+      "vector_core_num": 64
+    },
+    "ascend_home": "/home/yja/envs/tilelang-950/Ascend/cann-9.2.0",
+    "tilelang_sha": "64b52b4b1a505ba93e6e49a35cc0c5dc2a4b020d",
+    "pytorch_sha": "c2f510f2542a6c9976c95b344aed6a5b2600672c",
+    "python_overlay": {
+      "base_source_wheel": "a864ba51a2aa150c2ebe9625eaaef164e7d797bd",
+      "source_sha": "c2f510f2542a6c9976c95b344aed6a5b2600672c",
+      "installed_dir": "/home/yja/experiments/tilelang-backend-a5-20261106/env/lib/python3.11/site-packages/torch_npu",
+      "files": {
+        "torch_npu/_inductor/decomposition.py": "2e0b7eff1e07e2421d6a6198905ccbd90483b2a69fd96f2ecd2437e459afe5ff",
+        "torch_npu/_inductor/tilelang/codegen/ascend.py": "462486eff8d5d97dcc1960a8332e892a5b3e1c8286a25ec552c0f21038fba11d",
+        "torch_npu/_inductor/tilelang/codegen/tilelang_kernel.py": "488bc0b10a2bb2955fea09a501dd6e502033a4b650736a39a7d9801ce84f8f51"
+      }
+    }
+  },
+  "unittest_summary": {
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "tilelang_compile_calls": 17
+  },
+  "compute_case_count": 16,
+  "passed_cases": [
+    "float32:1,64,257,2051",
+    "float16:1,64,257,2051",
+    "bfloat16:1,64,257,2051",
+    "float32:257:multi_output",
+    "float32:257:scalar_broadcast",
+    "float16:257:scalar_broadcast",
+    "bfloat16:257:scalar_broadcast"
+  ],
+  "native_checks": {
+    "compiled_sources": 17,
+    "require": "__simd_vf__",
+    "reject": "__simt_vf__"
+  },
+  "cpu_tests": "9/9 passed including runtime tile-width contract",
+  "latest_code_sha": "c2f510f2542a6c9976c95b344aed6a5b2600672c",
+  "latest_code_difference": "Only adds positive multiple-of-64 factory guard and its CPU test; VF emission unchanged",
+  "latest_code_device_rerun": "Passed all 16 compute cases and 4 test methods; 17 SIMD-only native sources; guarded command exited 0",
+  "performance_measured": false,
+  "generated_sources": [
+    {
+      "name": "a5_simd_fp32_2051.cpp",
+      "raw_capture_sha256": "7da3bcb0006b2ee05c7058cdeb379be19d50ffd9ae03f3d2980239b294f9a694",
+      "repository_copy_sha256": "eec8fc4b9b53bc5a00350aa857750355775fa4ea5a59acd18f7894a6e92ccb35",
+      "identical_to_first_simd_run": true
+    },
+    {
+      "name": "a5_simd_scalar_broadcast_bf16_257.cpp",
+      "raw_capture_sha256": "15e546ca364c1d3073bf3eb16e21ca0ffb36dfa69a4321b95cdca8a28f20dd26",
+      "repository_copy_sha256": "c270618805ed3e4f189a139399c0e7b844ac113598506054262da134549e71e7",
+      "identical_to_first_simd_run": true
+    },
+    {
+      "name": "a5_simd_scalar_broadcast_bf16_257.tir",
+      "raw_capture_sha256": "4fd2c1c44f8dea456dd33a731cc625770dd67c1d0addbc39118811b3222d675f",
+      "repository_copy_sha256": "fa3d34ba05fc9d02945ba1346d1de6f7e1daea4a5ecf04e19efd2120edc40574",
+      "identical_to_first_simd_run": true
+    }
+  ],
+  "first_successful_source_sha": "36b2710017c0a3afb274ad484b543a0db7c2a866",
+  "device_evidence_directory": "/home/yja/experiments/tilelang-backend-a5-20261106/evidence-simd-02"
+}

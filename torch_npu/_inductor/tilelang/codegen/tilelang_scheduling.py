@@ -90,7 +90,11 @@ class TileLangScheduling(NPUTritonScheduling):
     ) -> Optional[str]:
         reduction_nodes = [node for node in nodes if node.is_reduction()]
         if reduction_nodes:
-            return "A5 reduction VF migration is pending"
+            reduction_numel = self._numel_product(reduction_numel)
+            if not isinstance(reduction_numel, (int, sympy.Integer)) or not 1 <= int(reduction_numel) <= 4096:
+                return "A5 SIMD reduction currently requires static R in [1, 4096]"
+            if any(kind not in {"sum", "max"} for n in reduction_nodes for kind in self._reduction_types_for_node(n)):
+                return "A5 SIMD reduction supports sum/max only"
         if len(reduction_nodes) > _MAX_REDUCTIONS_PER_KERNEL:
             names = ", ".join(node.get_name() for node in reduction_nodes)
             return (
@@ -286,8 +290,23 @@ class TileLangScheduling(NPUTritonScheduling):
 
         src_code = src_code.replace(str(Placeholder.KERNEL_NAME), kernel_name)
 
-        _, call_args, signature, _ = kernel.args.python_argdefs()
+        argdefs, call_args, signature, _ = kernel.args.python_argdefs()
         tensor_call_args = [a for a, s in zip(call_args, signature) if isinstance(s, TensorArg)]
+        kernel_call_args = list(tensor_call_args)
+        if kernel._reduction_outputs:
+            tensor_names = {a.name for a, s in zip(argdefs, signature) if isinstance(s, TensorArg)}
+            vector_locs = kernel._valid_vector_epilogue_locs(tensor_names)
+            scalar_output_vars = {
+                var for _, (var, loc, _) in kernel._output_buffer_items()
+                if loc not in vector_locs
+            }
+            # Reduction plans keep the singleton R axis in their FFI ABI.
+            # A view preserves Inductor's caller-owned output storage and shape.
+            kernel_call_args = [
+                f"{arg}.view(-1, 1)" if argdef.name in scalar_output_vars else arg
+                for argdef, arg, sig in zip(argdefs, call_args, signature)
+                if isinstance(sig, TensorArg)
+            ]
         output_arg_names = {
             var
             for _, (var, _, _) in kernel._output_buffer_items()
@@ -556,6 +575,11 @@ class TileLangScheduling(NPUTritonScheduling):
                     "_tilelang_configs = [c for c in _tilelang_configs "
                     "if not c.get('multibuffer', False)]"
                 )
+                if is_reduction_kernel:
+                    code.writeline(
+                        "_tilelang_configs = [{'X0BLOCK': 1, 'X0BLOCK_SUB': 1, "
+                        f"'R0BLOCK': (({rnumel_expr} + 63) // 64) * 64, 'multibuffer': False}}]"
+                    )
                 fallback_tiling_vars: list[str] = []
                 if ranked_tiling:
                     for axis_index, tiling_arg_name in enumerate(tiling_arg_names):
@@ -802,7 +826,7 @@ class TileLangScheduling(NPUTritonScheduling):
                         )
                     code.writeline(")")
                 code.writeline(f"{cache_var}[_key] = _compiled_kernel")
-            code.writeline(f"{cache_var}[_key]({', '.join(tensor_call_args)})")
+            code.writeline(f"{cache_var}[_key]({', '.join(kernel_call_args)})")
 
         wrapper.header.splice(code.getvalue())
         return kernel_name, src_code

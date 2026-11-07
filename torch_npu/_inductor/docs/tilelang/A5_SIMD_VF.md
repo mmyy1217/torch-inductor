@@ -25,7 +25,7 @@
 - 当前转换采用保守的 narrow/widen 方式；可能存在冗余 cast，未做性能或指令数优化。不能仅因切换为 SIMD 就声称加速。
 - 物理 tile 行宽必须是 64 的正整数倍。固定默认宽度为 128；factory 检查运行时 tile 参数，拒绝 0、32、65 等不满足完整向量装载约束的值。
 - SIMD 处理完整物理 tile，尾块只从 GM 搬运/写回逻辑有效元素；无效 lane 的结果不外传。这个约定仅适用于当前逐元素操作，不能直接用于跨 lane reduction。
-- 多维 broadcast 的纯 emitter 语义有本地覆盖，完整 Inductor ranked broadcast、stride、动态 shape、reduction、CV/Attention 尚未验收。
+- 多维 broadcast 的纯 emitter 语义有本地覆盖，完整 Inductor ranked broadcast、stride、动态 shape、CV/Attention 尚未验收。2026-11-07 的 sum/max/softmax reduction 已完成 A5 54/54 验收，见 [A5_REDUCTION_SIMD.md](A5_REDUCTION_SIMD.md)。
 
 ## 验证
 

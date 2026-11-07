@@ -6,6 +6,8 @@
 
 当前 pointwise 发射器改为 `T.SimdVF()` + 显式 `T.simd.*`。下文原 SIMT 验收与生成代码保留为历史记录；当前路线、精度/布局约束和 SIMD 验收见 [A5_SIMD_VF.md](A5_SIMD_VF.md)。现有 TileLang 发射器不生成 `SimtVF`，索引化搬运在 codegen 阶段明确拒绝；没有启用 gather 专用路由。
 
+2026-11-07 首版 sum/max/softmax SIMD reduction 已完成 A5 **54/54** 验收，包含三种浮点 dtype、尾块和特殊值。支持范围、修复及原始证据见 [A5_REDUCTION_SIMD.md](A5_REDUCTION_SIMD.md)。
+
 ## 固定来源
 
 - torch_npu 发布基线：`v26.2.0-pytorch2.14.0`，`54e365d3e3614299bccd17f06916544c3880c9fc`。
@@ -40,7 +42,7 @@
 
 - 首批 emitter 实现浮点 `copy/cast`、`add/sub/mul/truediv`、`exp/log/sqrt/rsqrt/abs`；实际端到端验收首先覆盖 `add → mul → exp`。
 - 计划中 operand 可按尾维对齐做 extent=1 广播；不支持的 tile/layout/dtype/运算明确拒绝。设备已验证线性 vector + scalar 输入广播；ranked broadcast 尚未验收。
-- reduction 与旧物化 broadcast emitter 暂不迁移；scheduler 对 reduction 仍尝试现有 Triton fallback。当前隔离环境的 Triton 3.2.1 fallback 在预编译头阶段失败，不能视为可用的 A5 fallback 能力。模板仍使用原 fallback，尚未生成新的 TileLang CV/Attention 模板。
+- 连续末轴、静态 R <= 4096 的 sum/max 与 softmax 已接入 SIMD emitter；sum/max 验证到 R=4096，softmax 验证到 R=2051。其他 reduction 仍尝试现有 Triton fallback；该 fallback 在当前隔离环境未通过验收。模板仍使用原 fallback，尚未生成新的 TileLang CV/Attention 模板。
 - 共享 `NPUIndexTritonKernel` / `NPUTritonScheduling` 的索引和调度设施，因此仍依赖 `triton-ascend`。不能将本实现称为不依赖 Triton 的独立 backend。
 - legacy autotuner 代码尚未完成 A5 验收；当前禁止把它的结果用作 A5 调优结论。
 
@@ -94,7 +96,7 @@ SSH 跳板在测试期间短暂断开；重连后读取完整结果与 guard 完
 ssh -F C:\Users\yejiaang\.ssh\a5-server-950dt\config a5-server 'bash /home/yja/experiments/tilelang-backend-a5-20261106/run-validation.sh'
 ```
 
-下一步扩展 ranked broadcast、stride/dynamic shape，并为 reduction 建立 A5 lowering；之后再推进 pipeline versions 与 CV/Attention。现有 fallback 环境问题和性能尚未验收，不因这批 pointwise 用例通过而视为解决。
+下一步扩展 ranked broadcast、stride/dynamic shape、长 reduction 和 Norm，再推进 pipeline versions 与 CV/Attention。现有 fallback 环境问题和性能尚未验收。
 
 ### 证据位置
 

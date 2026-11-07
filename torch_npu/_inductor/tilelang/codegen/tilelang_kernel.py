@@ -1461,7 +1461,9 @@ class LoopRegionEmitter:
 
                 AscendPointwiseEmitter(self.code, self.allocations).emit(operation)
             elif isinstance(operation, ReductionOpPlan):
-                raise TileLangUnsupported("A5 emission", "reduction VF migration is pending")
+                from .ascend import AscendReductionEmitter
+
+                AscendReductionEmitter(self.code, self.allocations).emit(operation, clear=clear)
             elif isinstance(operation, BroadcastOpPlan):
                 raise TileLangUnsupported("A5 emission", "materialized broadcast migration is pending")
             else:
@@ -1503,7 +1505,7 @@ class LoopRegionEmitter:
             self._emit_allocations(region)
             if iteration.mode == "NO_LOOP":
                 iteration.loop.emit_base(self.code)
-                iteration.loop.emit_full_remain(self.code)
+                iteration.loop.emit_first_remain(self.code)
                 for statement in region.body_prologue:
                     self.code.writeline(statement)
                 self._emit_body(region, clear=True)
@@ -1543,7 +1545,11 @@ class KernelProgramEmitter:
         code.writeline("")
         for statement in plan.preamble:
             code.writeline(statement)
-        if "_XBLOCK_SUB = X0BLOCK_SUB" in plan.preamble:
+        if "_RBLOCK = R0BLOCK" in plan.preamble:
+            code.writeline("if _XBLOCK != 1 or _XBLOCK_SUB != 1 or _rnumel <= 0 or _rnumel > 4096 or _RBLOCK < _rnumel or _RBLOCK % 64:")
+            with code.indent():
+                code.writeline("raise ValueError('A5 SIMD reduction requires one complete row, 0 < R <= 4096, and aligned RBLOCK')")
+        elif "_XBLOCK_SUB = X0BLOCK_SUB" in plan.preamble:
             code.writeline(
                 "from torch_npu._inductor.tilelang.codegen.ascend import validate_simd_tile_width"
             )
@@ -2684,7 +2690,11 @@ def _build_vec_ops(
                     src = op_str
 
             src_dtype = op_info.dtype if op_info is not None else None
-            dst_dtype = value_info.dtype
+            if op_info is not None and op_info.op is not None and op_info.op.name == "to_dtype":
+                src_dtype = op_info.op.dtype or src_dtype
+            # CSE may promote half/bfloat16 values to the FP32 computation
+            # dtype. Preserve the requested cast and its rounding boundary.
+            dst_dtype = value_info.op.dtype or value_info.dtype
             if src == target_buf or (src_dtype is not None and src_dtype == dst_dtype):
                 if cacheable_expr and expr_key is not None:
                     reusable_expr_bufs[expr_key] = src
@@ -5500,15 +5510,8 @@ class TileLangReductionProgramBuilder:
                     rewritten_operand = operand
                     if isinstance(operand, str) and operand in tensors:
                         operand_tensor = tensors[operand]
-                        if self._domain_key(operand_tensor) != self._domain_key(domain):
-                            rewritten_operand = self._request_broadcast(
-                                operand,
-                                operand_tensor,
-                                domain,
-                                pointwise_id,
-                                region_id,
-                                broadcast_cache,
-                            )
+                        # The SIMD consumer loads singleton dimensions with
+                        # BRC; do not materialize row-wise broadcast buffers.
                         if rewritten_operand not in segment_outputs:
                             inputs.add(str(rewritten_operand))
                     operands.append(rewritten_operand)
@@ -5557,7 +5560,7 @@ class TileLangReductionProgramBuilder:
     def _iteration(self, reduction_ops: tuple[str, ...]) -> RTileIterationPlan:
         return RTileIterationPlan(
             self.r_loop,
-            "NO_LOOP" if self.kernel.persistent_reduction else "SERIAL",
+            "NO_LOOP",
             reduction_ops,
         )
 
@@ -5769,6 +5772,14 @@ class TileLangReductionProgramBuilder:
             for argdef, sig in zip(argdefs, signature)
             if isinstance(sig, TensorArg)
         }
+        if self.ranked:
+            raise TileLangUnsupported("A5 reduction", "ranked layouts are not enabled")
+        for _, (_, loc, dtype) in self.kernel._input_items():
+            tensor = self._input_tensor(loc, dtype)
+            if tensor.dims != ("x", "r") or not _is_dense_reduction_matrix_index(
+                self.kernel._input_index(loc), self.kernel.numels.get("r", sympy.S.One)
+            ):
+                raise TileLangUnsupported("A5 reduction", "only contiguous last-axis reductions are enabled")
         self._register_inputs()
         self._register_outputs(tensor_arg_names)
         self._plan_reductions()

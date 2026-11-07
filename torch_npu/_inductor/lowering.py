@@ -141,7 +141,7 @@ if npu_config.dump_fx_graph:
     scheduler._prune_redundant_deps = _npu_prune_redundant_deps
     Scheduler._get_unmet_dep_nodes = _npu_get_unmet_dep_nodes
 
-def make_reduction(reduction_type: ReductionType, override_return_dtype=None):
+def make_reduction(reduction_type: ReductionType, override_return_dtype=None, *, strict_sum: bool = False):
     def inner(x, axis=None, keepdims=False, *, dtype=None):
         kwargs = _make_reduction_inner(
             x,
@@ -149,8 +149,11 @@ def make_reduction(reduction_type: ReductionType, override_return_dtype=None):
             keepdims=keepdims,
             dtype=dtype,
             override_return_dtype=override_return_dtype,
+            **({} if npu_config.dump_fx_graph else {"reduction_type": reduction_type}),
         )
         if npu_config.dump_fx_graph:
+            if strict_sum:
+                raise NotImplementedError("strict_sum is not supported by NPU FX graph dumping")
             node_name = f'reduction_{next(node_id)}'
             input_graphs = fetch_graphs([x, axis if axis is not None else list(range(len(x.get_size())))])
             new_graph = merge_traced_graphs(input_graphs, reduction_type_to_aten_fn[reduction_type],
@@ -163,6 +166,7 @@ def make_reduction(reduction_type: ReductionType, override_return_dtype=None):
         else:
             result = Reduction.create(reduction_type=reduction_type,
                                       input_node=x,
+                                      strict_sum=strict_sum,
                                       **kwargs)
         if isinstance(
             result.data.data,  # type: ignore[attr-defined]

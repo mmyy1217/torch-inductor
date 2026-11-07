@@ -1,0 +1,110 @@
+# from tvm.script import tirx as T
+
+@T.prim_func
+def tilelang_fused__softmax_0_prim_fn(in_ptr0_handle: T.handle, out_ptr2_handle: T.handle):
+    in_ptr0 = T.match_buffer(in_ptr0_handle, (3, 2051), "bfloat16", strides=(2051, 1))
+    out_ptr2 = T.match_buffer(out_ptr2_handle, (3, 2051), "bfloat16", strides=(2051, 1))
+    # with T.sblock("root"):
+    for _tl_x_base in T.thread_binding(3, thread="blockIdx.x"):
+        tx: T.int32 = T.launch_thread_idx(0)
+        ty: T.int32 = T.launch_thread_idx(1)
+        tz: T.int32 = T.launch_thread_idx(2)
+        with T.sblock("tilelang_root"):
+            T.reads()
+            T.writes()
+            _in_ptr0_local = T.handle("bfloat16", "shared.dyn")
+            _tmp2_reduce_local = T.handle("float32", "shared.dyn")
+            _tmp5_reduce_local = T.handle("float32", "shared.dyn")
+            _out_ptr2_local = T.handle("bfloat16", "shared.dyn")
+            _tmp2_reduce_in = T.handle("float32", "shared.dyn")
+            _tmp5_reduce_in = T.handle("float32", "shared.dyn")
+            T.sblock_attr({"tl.buffer_versions_map": {_in_ptr0_local: 1, _tmp2_reduce_local: 1, _tmp5_reduce_local: 1, _out_ptr2_local: 1, _tmp2_reduce_in: 1, _tmp5_reduce_in: 1}})
+            _in_ptr0_local_1 = T.sblock_alloc_buffer((1, 2112), "bfloat16", data=_in_ptr0_local, scope="shared.dyn")
+            _tmp2_reduce_local_1 = T.sblock_alloc_buffer((1, 1), data=_tmp2_reduce_local, scope="shared.dyn")
+            _tmp5_reduce_local_1 = T.sblock_alloc_buffer((1, 1), data=_tmp5_reduce_local, scope="shared.dyn")
+            _out_ptr2_local_1 = T.sblock_alloc_buffer((1, 2112), "bfloat16", data=_out_ptr2_local, scope="shared.dyn")
+            _tmp2_reduce_in_1 = T.sblock_alloc_buffer((1, 2112), data=_tmp2_reduce_in, scope="shared.dyn")
+            _tmp5_reduce_in_1 = T.sblock_alloc_buffer((1, 2112), data=_tmp5_reduce_in, scope="shared.dyn")
+            _tl_outer_remain: T.int32 = T.min(1, 3 - _tl_x_base)
+            for _tl_block in range(_tl_outer_remain):
+                _tl_base: T.int32 = _tl_x_base + _tl_block
+                _remain_X: T.int32 = T.min(1, T.min(1 - _tl_block, 3 - _tl_base))
+                T.ascend_copy(T.region(in_ptr0[_tl_base, 0], 1, _remain_X, 2051), T.region(_in_ptr0_local_1[0, 0], 2, _remain_X, 2051))
+                with T.sblock("SIMD_VF", no_realize=True):
+                    T.reads()
+                    T.writes()
+                    T.sblock_attr({"tl.simdvf_lanes": T.int64(128), "tl.vf_source_index": T.int64(0)})
+                    T.attr("simdvf", "tl.simdvf_scope", 1)
+                    _vf_mask: T.boolx256 = T.tl.simd.pset(32, "PAT_ALL")
+                    for _vf_i0, _vf_chunk in T.grid(1, 33):
+                        _vf_v0: T.float32x64 = T.tl.simd.vcvt(T.tl.simd.vld(T.access_ptr(_in_ptr0_local_1[_vf_i0, _vf_chunk * 64], 64, 1), "UNPK_B16"), _vf_mask, "PART_EVEN", "MODE_ZEROING")
+                        T.tl.simd.vsts(T.access_ptr(_tmp2_reduce_in_1[_vf_i0, _vf_chunk * 64], 64, 2), _vf_v0, _vf_mask, "NORM_B32")
+                with T.sblock("SIMD_VF", no_realize=True):
+                    T.reads()
+                    T.writes()
+                    T.sblock_attr({"tl.simdvf_lanes": T.int64(128), "tl.vf_source_index": T.int64(1)})
+                    _red_acc = T.sblock_alloc_buffer((1,), "float32x64", scope="local.var")
+                    T.attr("simdvf", "tl.simdvf_scope", 1)
+                    _red_full: T.boolx256 = T.tl.simd.pset(32, "PAT_ALL")
+                    for _red_row in range(1):
+                        v: T.boolx256 = T.tl.simd.pset(32, "PAT_ALL")
+                        _red_identity: T.float32x64 = T.tl.simd.vdup(T.float32("-inf"), v, "MODE_ZEROING")
+                        _red_acc[0] = _red_identity
+                        for _red_chunk in range(33):
+                            _red_mask: T.boolx256 = T.tl.simd.update_mask(T.min(64, 2051 - _red_chunk * 64), 32)
+                            _red_loaded: T.float32x64 = T.tl.simd.vld(T.access_ptr(_tmp2_reduce_in_1[_red_row, _red_chunk * 64], 64, 1), "NORM")
+                            _red_values: T.float32x64 = T.tl.simd.vsel(_red_loaded, _red_identity, _red_mask)
+                            _red_max: T.float32x64 = T.tl.simd.vmax(_red_acc[0], _red_values, _red_full, "MODE_ZEROING")
+                            _red_max_1: T.float32x64 = T.tl.simd.vsel(_red_acc[0], _red_max, T.tl.simd.vcmp(_red_acc[0], _red_acc[0], _red_full, "ne"))
+                            _red_acc[0] = T.tl.simd.vsel(_red_values, _red_max_1, T.tl.simd.vcmp(_red_values, _red_values, _red_full, "ne"))
+                        _red_result: T.float32x64 = T.tl.simd.vcmax(_red_acc[0], _red_full, "MODE_ZEROING")
+                        _red_zero: T.float32x64 = T.tl.simd.vdup(T.float32(0.0), v, "MODE_ZEROING")
+                        _red_nan_flags: T.float32x64 = T.tl.simd.vsel(T.tl.simd.vdup(T.float32(1.0), v, "MODE_ZEROING"), _red_zero, T.tl.simd.vcmp(_red_acc[0], _red_acc[0], _red_full, "ne"))
+                        _red_nan_count: T.float32x64 = T.tl.simd.vdupv(T.tl.simd.vcadd(_red_nan_flags, _red_full, "MODE_ZEROING"), v, "POS_LOWEST", "MODE_ZEROING")
+                        _red_result_1: T.float32x64 = T.tl.simd.vsel(T.tl.simd.vdup(T.float32("nan"), v, "MODE_ZEROING"), _red_result, T.tl.simd.vcmp(_red_nan_count, _red_zero, _red_full, "ne"))
+                        T.tl.simd.vsts(T.access_ptr(_tmp2_reduce_local_1[_red_row, 0], 1, 2), _red_result_1, _red_full, "ONEPT_B32")
+                T.ascend_copy(T.region(in_ptr0[_tl_base, 0], 1, _remain_X, 2051), T.region(_in_ptr0_local_1[0, 0], 2, _remain_X, 2051))
+                with T.sblock("SIMD_VF", no_realize=True):
+                    T.reads()
+                    T.writes()
+                    T.sblock_attr({"tl.simdvf_lanes": T.int64(128), "tl.vf_source_index": T.int64(2)})
+                    T.attr("simdvf", "tl.simdvf_scope", 1)
+                    _vf_mask: T.boolx256 = T.tl.simd.pset(32, "PAT_ALL")
+                    for _vf_i0, _vf_chunk in T.grid(1, 33):
+                        _vf_v0: T.float32x64 = T.tl.simd.vcvt(T.tl.simd.vld(T.access_ptr(_in_ptr0_local_1[_vf_i0, _vf_chunk * 64], 64, 1), "UNPK_B16"), _vf_mask, "PART_EVEN", "MODE_ZEROING")
+                        _vf_v1: T.float32x64 = T.tl.simd.vsub(_vf_v0, T.tl.simd.vld(T.access_ptr(_tmp2_reduce_local_1[_vf_i0, 0], 1, 1), "BRC_B32"), _vf_mask, "MODE_ZEROING")
+                        _vf_v2: T.float32x64 = T.tl.simd.vexp(_vf_v1, _vf_mask, "MODE_ZEROING")
+                        T.tl.simd.vsts(T.access_ptr(_tmp5_reduce_in_1[_vf_i0, _vf_chunk * 64], 64, 2), _vf_v2, _vf_mask, "NORM_B32")
+                with T.sblock("SIMD_VF", no_realize=True):
+                    T.reads()
+                    T.writes()
+                    T.sblock_attr({"tl.simdvf_lanes": T.int64(128), "tl.vf_source_index": T.int64(3)})
+                    _red_acc = T.sblock_alloc_buffer((1,), "float32x64", scope="local.var")
+                    T.attr("simdvf", "tl.simdvf_scope", 1)
+                    _red_full: T.boolx256 = T.tl.simd.pset(32, "PAT_ALL")
+                    for _red_row in range(1):
+                        v: T.boolx256 = T.tl.simd.pset(32, "PAT_ALL")
+                        _red_identity: T.float32x64 = T.tl.simd.vdup(T.float32(0.0), v, "MODE_ZEROING")
+                        _red_acc[0] = _red_identity
+                        for _red_chunk in range(33):
+                            _red_mask: T.boolx256 = T.tl.simd.update_mask(T.min(64, 2051 - _red_chunk * 64), 32)
+                            _red_loaded: T.float32x64 = T.tl.simd.vld(T.access_ptr(_tmp5_reduce_in_1[_red_row, _red_chunk * 64], 64, 1), "NORM")
+                            _red_values: T.float32x64 = T.tl.simd.vsel(_red_loaded, _red_identity, _red_mask)
+                            _red_acc[0] = T.tl.simd.vadd(_red_acc[0], _red_values, _red_full, "MODE_ZEROING")
+                        _red_result: T.float32x64 = T.tl.simd.vcadd(_red_acc[0], _red_full, "MODE_ZEROING")
+                        T.tl.simd.vsts(T.access_ptr(_tmp5_reduce_local_1[_red_row, 0], 1, 2), _red_result, _red_full, "ONEPT_B32")
+                T.ascend_copy(T.region(in_ptr0[_tl_base, 0], 1, _remain_X, 2051), T.region(_in_ptr0_local_1[0, 0], 2, _remain_X, 2051))
+                with T.sblock("SIMD_VF", no_realize=True):
+                    T.reads()
+                    T.writes()
+                    T.sblock_attr({"tl.simdvf_lanes": T.int64(128), "tl.vf_source_index": T.int64(4)})
+                    T.attr("simdvf", "tl.simdvf_scope", 1)
+                    _vf_mask: T.boolx256 = T.tl.simd.pset(32, "PAT_ALL")
+                    for _vf_i0, _vf_chunk in T.grid(1, 33):
+                        _vf_v0: T.float32x64 = T.tl.simd.vcvt(T.tl.simd.vld(T.access_ptr(_in_ptr0_local_1[_vf_i0, _vf_chunk * 64], 64, 1), "UNPK_B16"), _vf_mask, "PART_EVEN", "MODE_ZEROING")
+                        _vf_v1: T.float32x64 = T.tl.simd.vsub(_vf_v0, T.tl.simd.vld(T.access_ptr(_tmp2_reduce_local_1[_vf_i0, 0], 1, 1), "BRC_B32"), _vf_mask, "MODE_ZEROING")
+                        _vf_v2: T.float32x64 = T.tl.simd.vexp(_vf_v1, _vf_mask, "MODE_ZEROING")
+                        _vf_v3: T.float32x64 = T.tl.simd.vdiv(_vf_v2, T.tl.simd.vld(T.access_ptr(_tmp5_reduce_local_1[_vf_i0, 0], 1, 1), "BRC_B32"), _vf_mask, "MODE_ZEROING")
+                        _vf_v4: T.float32x64 = T.tl.simd.vcvt(T.tl.simd.vcvt(T.tl.simd.vcvt(T.tl.simd.vcvt(_vf_v3, _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PART_EVEN", "MODE_ZEROING"), _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PART_EVEN", "MODE_ZEROING")
+                        T.tl.simd.vsts(T.access_ptr(_out_ptr2_local_1[_vf_i0, _vf_chunk * 64], 64, 2), T.tl.simd.vcvt(_vf_v4, _vf_mask, "ROUND_R", "RS_DISABLE", "PART_EVEN", "MODE_ZEROING"), _vf_mask, "PK_B32")
+                T.ascend_copy(T.region(_out_ptr2_local_1[0, 0], 1, _remain_X, 2051), T.region(out_ptr2[_tl_base, 0], 2, _remain_X, 2051))

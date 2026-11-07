@@ -56,7 +56,7 @@ def emit(operations, shapes, outputs=("y",)):
     return "\n".join(code.lines)
 
 
-def execute(source, tensors):
+def execute(source, tensors, **symbols):
     def cast(value, dtype):
         if dtype == "bfloat16":
             bits = struct.unpack("I", struct.pack("f", value))[0]
@@ -92,9 +92,11 @@ def execute(source, tensors):
         indices = index if isinstance(index, tuple) else (index,)
         if dist == "PK_B32":
             value = value[::2]
+        elif dist.startswith("ONEPT_"):
+            value = value[:1]
         else:
             assert dist == "NORM_B32"
-        assert len(value) == 64
+        assert len(value) == (1 if dist.startswith("ONEPT_") else 64)
         for i, x in enumerate(value):
             key = (*indices[:-1], indices[-1] + i)
             tensor.values[key if isinstance(index, tuple) else key[0]] = x
@@ -107,15 +109,24 @@ def execute(source, tensors):
 
     language = SimpleNamespace(
         SimdVF=contextlib.nullcontext, serial=range, cast=cast,
+        min=min, ceildiv=lambda a, b: (a+b-1)//b, float32=lambda x: x,
         simd=SimpleNamespace(
             pset=lambda bits: bits, vld=load, vcvt=convert, vsts=store,
             vdup=lambda x, dtype: [cast(x, dtype)] * 64,
             vadd=binary(lambda a, b: a+b), vsub=binary(lambda a, b: a-b),
             vmul=binary(lambda a, b: a*b), vdiv=binary(lambda a, b: a/b),
             vexp=unary(math.exp), vln=unary(math.log), vsqrt=unary(math.sqrt), vabs=unary(abs),
+            alloc_var=lambda dtype: None,
+            update_mask=lambda count, bits: [i < count for i in range(64)],
+            vsel=lambda a, b, mask: [x if active else y for x, y, active in zip(a, b, mask)],
+            vmax=binary(lambda a, b: b if math.isnan(a) else a if math.isnan(b) else max(a, b)),
+            vcmp=lambda a, b, mask, op: [x != y for x, y in zip(a, b)] if op == "ne" else None,
+            vcadd=lambda a, mask: [sum(a)] + [0.0] * 63,
+            vcmax=lambda a, mask: [max(x for x in a if not math.isnan(x)) if any(not math.isnan(x) for x in a) else math.nan] + [0.0] * 63,
+            vdupv=lambda a: [a[0]] * 64,
         ),
     )
-    exec(compile(source, "<generated-vf>", "exec"), {"T": language, **tensors})
+    exec(compile(source, "<generated-vf>", "exec"), {"T": language, **tensors, **symbols})
 
 
 class TestAscendEmitter(unittest.TestCase):

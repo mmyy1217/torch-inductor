@@ -132,6 +132,8 @@ git -C D:/pytorch-ascend/.worktrees/tilelang-a5-migration rebase --onto v26.2.0-
 
 首个可验收里程碑是 **P1 + P2：在固定发布版本上运行由 torch.compile 生成的 A5 显式 VF pointwise kernel**。第二个里程碑是 RMSNorm/Softmax。Attention、多输出复杂融合、自动 stage 搜索和 PTO 不阻塞首个里程碑。
 
+2026-11-07 进展：P3 的连续末轴 sum/max/softmax SIMD 路径完成 A5 54/54 验证，见 [验收记录](A5_REDUCTION_SIMD.md)。min、长 reduction、Norm 与复杂多输出尚未完成，P3 整体仍在进行。
+
 每阶段分开提交：公共接口适配、计划数据结构、A5 emitter、运行/缓存、测试与证据。不要在一个提交里同时升级 compiler、改变 tile、改变算法和宣称性能收益。
 
 ### 模板与 Attention 的后续边界

@@ -1,0 +1,10 @@
+{
+  "repository": "https://gitcode.com/wamdus/pytorch.git",
+  "base_branch": "tilelang-backend-a5",
+  "base_commit": "2cb7842ffc00a1aee8025611028b80ebe222b54b",
+  "branch": "pytorch-tilelang-flex-integration",
+  "commit": "0a668ea83bb3f72541912ecf19eab782afb00402",
+  "published": false,
+  "local_checkout": "/home/zuomin/Projects/Compiler/wt/pytorch-tilelang-flex-integration",
+  "note": "集成提交仅在本地供 review，尚未推送；远端 base_branch 不含本次模板。"
+}

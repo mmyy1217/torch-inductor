@@ -25,15 +25,7 @@ class ExampleDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(configs), 21)
         self.assertEqual(
             {c["id"] for c in configs if c["tilelang_status"] == "DONE"},
-            {
-                "dense",
-                "causal",
-                "sliding_window",
-                "document_mask",
-                "relative_bias",
-                "softcap",
-                "causal_with_bias",
-            },
+            {"dense", "gqa", "mqa"},
         )
         for config in configs:
             module = runner.load_case(config["id"])
@@ -52,7 +44,7 @@ class ExampleDiscoveryTests(unittest.TestCase):
                 "--impl",
                 "tilelang",
                 "--case",
-                "gqa",
+                "causal",
                 "--list",
             ],
             check=True,

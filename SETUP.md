@@ -6,13 +6,14 @@
 
 个人用例仓：`git clone https://github.com/mmyy1217/torch-inductor.git flex-attention-lab`。
 
-实现目前在本地 `/home/zuomin/Projects/Compiler/wt/pytorch-tilelang-flex-integration`，分支和提交见 community-source.json。它尚未推送到 GitCode；新机器需要先取得这份提交，不能直接用同事原分支代替。拿到后使用自己的路径，不依赖上面的个人绝对路径。
+实现仓：`git clone -b pytorch-tilelang-flex-integration https://gitcode.com/qq_51358522/pytorch.git pytorch-npu`。
+精确已验证提交见 [community-source.json](community-source.json)。这是个人分支，小组分支尚未更新。
 
 个人仓没有 torch_npu、third_party 或子模块。overlay 只替换已安装匹配原生扩展之上的 `_inductor` Python 文件，不构建 PyTorch。
 
 ## 已验证的组件组合
 
-| 组件 | 2026-11-10 A5-BLUE记录 |
+| 组件 | 已验证环境 |
 | --- | --- |
 | 设备 | Huawei Ascend 950PR，28 Cube / 56 Vector |
 | Python | 3.11 |
@@ -62,11 +63,11 @@ python -P mixed.py
 bash run.sh --case dense --impl tilelang --output /your/work/dense-check
 bash run.sh --case all --impl tilelang --output /your/work/tilelang-check
 bash run.sh --case dense --impl triton --output /your/work/triton-check
-python -P validate_tilelang_matrix.py --output /your/work/boundaries
+python -P bench.py --source-repo /path/to/pytorch-npu --impl tilelang --shape 2 8 512 2048 --kv-heads 2 --head-dim 256 --check-only
 python -P validate_tilelang_cache.py --phase cold --output /your/work/cache-check
 python -P validate_tilelang_cache.py --phase warm --output /your/work/cache-check
 ```
 
 先看 `summary.json`、各case的 `result.json` 和日志。默认check以固定seed对独立FP32参考比较所有输出，atol=rtol=0.03，不代表模型级精度验收。首次编译时间与稳态时延分开报告。
 
-不同shape用 `--batch`、`--heads`、`--q-seq`、`--kv-seq` 配置；许可范围与明确拒绝条件见 [SUPPORT.md](SUPPORT.md)。当前矩阵通过不表示所有允许shape都已验证。Triton pointwise可以参与BlockMask元数据构造，判断attention后端要看模板和launch源码，不能只看是否出现Triton。
+不同shape用 `--batch`、`--heads`、`--kv-heads`、`--head-dim`、`--q-seq`、`--kv-seq` 配置；许可范围与明确拒绝条件见 [SUPPORT.md](SUPPORT.md)。当前矩阵通过不表示所有允许shape都已验证。Triton pointwise可以参与BlockMask元数据构造，判断attention后端要看模板和launch源码，不能只看是否出现Triton。

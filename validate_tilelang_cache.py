@@ -1,7 +1,6 @@
 """Check cold compilation and cross-process FX cache replay on an allocated NPU."""
 
 import argparse
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -36,19 +35,20 @@ from torch._dynamo.utils import counters
 from torch_npu._inductor import config as npu_config
 from torch_npu._inductor.codegen import tilelang_template
 
-spec = importlib.util.spec_from_file_location(
-    "matrix", Path(__file__).with_name("validate_tilelang_matrix.py")
-)
-m = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(m)
 npu_config.flex_attention.implementation = "tilelang"
 functorch_config.enable_autograd_cache = False
 inductor_config.fx_graph_cache = True
 inductor_config.force_disable_caches = False
 inductor_config.fx_graph_remote_cache = False
 torch.npu.set_device(0)
-case = m.build_case("full_only", "npu")
-reference = m.reference(case)
+from torch.nn.attention.flex_attention import flex_attention
+
+torch.manual_seed(2026)
+inputs = [
+    torch.randn(1, 4, 256, 128, device="npu", dtype=torch.bfloat16) for _ in range(3)
+]
+q, k, v = (x.cpu().float() for x in inputs)
+reference = ((q @ k.transpose(-2, -1)) / 128**0.5).softmax(-1) @ v
 phase = args.phase
 original = tilelang_template.render_flex_attention
 renders = []
@@ -63,13 +63,13 @@ def render(spec):
 
 with patch.object(tilelang_template, "render_flex_attention", render), torch.no_grad():
     fn = torch.compile(
-        case["attention"],
+        flex_attention,
         backend="inductor",
         fullgraph=True,
         dynamic=False,
         options={"npu_backend": "tilelang"},
     )
-    actual = fn(*case["inputs"])
+    actual = fn(*inputs)
     torch.npu.synchronize()
     torch.testing.assert_close(actual.cpu().float(), reference, atol=0.03, rtol=0.03)
     import tilelang
@@ -77,7 +77,7 @@ with patch.object(tilelang_template, "render_flex_attention", render), torch.no_
     with patch.object(
         tilelang, "compile", side_effect=AssertionError("Unexpected repeat compile")
     ):
-        repeated = fn(*case["inputs"])
+        repeated = fn(*inputs)
         torch.npu.synchronize()
     torch.testing.assert_close(repeated, actual, atol=0, rtol=0)
 if phase == "warm":

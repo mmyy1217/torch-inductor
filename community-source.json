@@ -1,10 +1,9 @@
 {
-  "repository": "https://gitcode.com/wamdus/pytorch.git",
-  "base_branch": "tilelang-backend-a5",
-  "base_commit": "2cb7842ffc00a1aee8025611028b80ebe222b54b",
+  "repository": "https://gitcode.com/qq_51358522/pytorch.git",
   "branch": "pytorch-tilelang-flex-integration",
-  "commit": "0a668ea83bb3f72541912ecf19eab782afb00402",
-  "published": false,
-  "local_checkout": "/home/zuomin/Projects/Compiler/wt/pytorch-tilelang-flex-integration",
-  "note": "集成提交仅在本地供 review，尚未推送；远端 base_branch 不含本次模板。"
+  "commit": "5ea224c1a41905c7704304091d51dcb134651be7",
+  "parent_commit": "70ea2d0ca55addf86ef75da49dd1030a4fa61e7e",
+  "colleague_base_commit": "2cb7842ffc00a1aee8025611028b80ebe222b54b",
+  "published": true,
+  "note": "新增一个 dense shape 扩展提交；仅推送个人仓库，小组分支未更新。显式指定此源码 checkout 创建 overlay。"
 }

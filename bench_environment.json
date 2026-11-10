@@ -1,0 +1,26 @@
+{
+  "parent_commit": "70ea2d0ca55addf86ef75da49dd1030a4fa61e7e",
+  "tilelang_commit": "79eaaae37014abdd2ab7ee381732a1e906286e51",
+  "tilelang_diff_sha256": "aae5d77024255a0f95d6133d97af338c03390ad8dc40757bb3b3f7f96b029d63",
+  "source_sha256": {
+    "examples/flex_attention/bench.py": "0ae96e4867569c688274c1cb13996a7ae90c47ea95aff4e93caf4d2c92dd38da",
+    "torch_npu/_inductor/codegen/tilelang.py": "7a94737f22eb0e1947a7dc1df9d0d356b904f57984e48fcf5fd2e2f5b601847d",
+    "torch_npu/_inductor/codegen/tilelang_template.py": "7af43fd8ce430a2f51dbd6824bbfa889d7f1c423e1db9d1db276896b978801d0",
+    "torch_npu/_inductor/config.py": "28611902cb2c41c450e17a6dd15851d9af9e09097dd20bd2a0ecc85176b27585",
+    "torch_npu/_inductor/kernel/flex_attention.py": "97bc94cf6d54139bfb0be1a2a04c612a66e4ff0e09a5587ff028bde71dfadafe",
+    "torch_npu/_inductor/kernel/tilelang_flex_attention.py": "139106ed078a4b55cb77f5663eb4ab200b406cd08f5ca1a6fa9614de93265a45",
+    "torch_npu/_inductor/kernel/tilelang_flex_kernel.py": "877e4264296d09cd21d70ed2973cedbd36a9bde7788c6d173483038118bc4e61",
+    "torch_npu/_inductor/runtime/tilelang.py": "f4c165265e9063816f37b429ddc7ff634478bbfeefee01fc9d7730c8b8a36a9e",
+    "torch_npu/_inductor/tilelang/codegen/tilelang_kernel.py": "14210fbf1d8e8379bed438cd38d558486cde4fd27804dc960503b6400ad074f3",
+    "torch_npu/_inductor/tilelang/codegen/tilelang_scheduling.py": "07478d43cbe978552635fdeba7ac244ffded5af90daa5207a2e178fad1ad1bb5"
+  },
+  "packages": {
+    "torch": "2.14.0+cpu",
+    "torch_npu": "2.14.0",
+    "triton": "3.5.0",
+    "tilelang": "0.1.15+cpu.git79eaaae3"
+  },
+  "hardware": "Huawei Ascend 950PR",
+  "measurement": "two sequential rounds, second reverses implementation order; 10 warmups, 30 event samples",
+  "source_commit": "5ea224c1a41905c7704304091d51dcb134651be7"
+}

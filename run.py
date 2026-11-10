@@ -327,9 +327,9 @@ def run_worker(a, c, folder):
         samples_us=samples,
         effective_flops=effective,
         effective_tflops=tflops,
-        utilization_pct=100 * tflops / a.peak_tflops
-        if tflops and a.peak_tflops
-        else None,
+        utilization_pct=(
+            100 * tflops / a.peak_tflops if tflops and a.peak_tflops else None
+        ),
         peak_tflops=a.peak_tflops,
         peak_source=a.peak_source,
         mask_build_ms=mask_ms,
@@ -356,10 +356,14 @@ def main(default_case=None):
     p.add_argument("--kv-seq", type=int, help="Override KV length independently")
     p.add_argument("--batch", type=int, help="Override matching Q/KV batch size")
     p.add_argument("--heads", type=int, help="Override matching Q/KV head count")
+    p.add_argument("--kv-heads", type=int, help="Override KV heads after --heads")
+    p.add_argument(
+        "--head-dim", type=int, help="Override matching Q/K/V head dimension"
+    )
     p.add_argument(
         "--case",
         choices=["all"] + [c["id"] for c in cases()],
-        default=default_case or "causal",
+        default=default_case or "dense",
     )
     p.add_argument("--output", default="results/" + time.strftime("%Y%m%d-%H%M%S"))
     p.add_argument("--peak-tflops", type=float)
@@ -383,6 +387,8 @@ def main(default_case=None):
         (a.kv_seq, ("sk",)),
         (a.batch, ("b", "bkv")),
         (a.heads, ("hq", "hkv")),
+        (a.kv_heads, ("hkv",)),
+        (a.head_dim, ("d", "dv")),
     ):
         if arg is not None:
             if arg <= 0:
@@ -476,7 +482,7 @@ def main(default_case=None):
         ]
         if a.seq is not None:
             command += ["--seq", str(a.seq)]
-        for flag in ("q_seq", "kv_seq", "batch", "heads"):
+        for flag in ("q_seq", "kv_seq", "batch", "heads", "kv_heads", "head_dim"):
             if getattr(a, flag) is not None:
                 command += ["--" + flag.replace("_", "-"), str(getattr(a, flag))]
         if a.peak_tflops:

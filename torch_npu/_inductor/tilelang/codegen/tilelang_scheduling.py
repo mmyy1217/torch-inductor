@@ -18,6 +18,11 @@ from torch._inductor.virtualized import V
 
 from torch_npu._inductor.codegen.npu_kernel_features import NPUKernelFeatures
 from torch_npu._inductor.codegen.scheduling import NPUTritonScheduling
+from torch_npu._inductor.codegen.tilelang import (
+    contains_tilelang_template,
+    is_tilelang_template,
+    codegen_tilelang_template,
+)
 from torch_npu._inductor.codegen.triton_utils import get_byte_per_numel
 
 from .tilelang_kernel import (
@@ -73,10 +78,18 @@ class TileLangScheduling(NPUTritonScheduling):
         self,
         template_node,
         epilogue_nodes: list,
+        prologue_nodes=(),
+        *,
         only_gen_src_code: bool = False,
     ):
+        if is_tilelang_template(template_node):
+            if only_gen_src_code:
+                raise NotImplementedError("TileLang templates do not support source-only benchmarking")
+            return codegen_tilelang_template(self, template_node, epilogue_nodes, prologue_nodes)
+        if prologue_nodes:
+            raise NotImplementedError("NPU Triton templates do not support prologue fusion")
         return self._triton_scheduling.codegen_template(
-            template_node, epilogue_nodes, only_gen_src_code
+            template_node, epilogue_nodes, only_gen_src_code=only_gen_src_code
         )
 
     def _fallback_to_triton(self, node, reason: str):
@@ -152,6 +165,8 @@ class TileLangScheduling(NPUTritonScheduling):
         return reduction_types in (["max", "sum"], ["sum", "sum"])
 
     def can_fuse(self, node1, node2):
+        if contains_tilelang_template(node1) or contains_tilelang_template(node2):
+            return False
         if node1.is_reduction() and node2.is_reduction():
             if not self._is_supported_reduction_fusion(node1, node2):
                 return False
@@ -389,6 +404,10 @@ class TileLangScheduling(NPUTritonScheduling):
             and tilelang_pointwise_axis_names
             and len(tilelang_pointwise_axis_names) > 1
         )
+        if not is_reduction_kernel and not ranked_pointwise:
+            # Linear PrimFuncs expose one-dimensional buffers even for rank-4 inputs.
+            # view preserves caller-owned storage and rejects incompatible layouts.
+            kernel_call_args = [f"{arg}.view(-1)" for arg in tensor_call_args]
         ranked_reduction = bool(
             is_reduction_kernel
             and sum(

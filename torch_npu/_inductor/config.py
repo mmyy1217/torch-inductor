@@ -452,6 +452,7 @@ enable_matmul_triton = _parse_bool_env("TORCHINDUCTOR_ENABLE_MATMUL_TRITON", Fal
 class flex_attention:
     """Runtime strategy switches for the NPU FlexAttention lowering."""
 
+    implementation = os.getenv("TORCHINDUCTOR_ASCEND_FLEX_ATTENTION_IMPL", "triton").lower()
     metadata_auto_infer = True
     flexattention_mask_out = True
     # Keep rollout disabled until generated outputcode and NPU numerics have

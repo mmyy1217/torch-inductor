@@ -625,6 +625,17 @@ def patch_flex_attention() -> None:
             {} if kernel_options is None else dict(kernel_options)
         )
         updated_kernel_options[_EXPLICIT_SCORE_MOD_OPTION] = score_mod is not None
+        if npu_config.flex_attention.implementation == "tilelang":
+            from ..codegen.tilelang import template_cache_key
+            updated_kernel_options["_NPU_TILELANG_CACHE_KEY"] = template_cache_key()
+            updated_kernel_options["_NPU_EXPLICIT_AUX"] = (
+                return_lse
+                or return_aux is not None and (return_aux.lse or return_aux.max_scores)
+            )
+            # Dense templates must not silently ignore user callbacks or sparse metadata.
+            updated_kernel_options["_NPU_DENSE_ATTENTION"] = (
+                score_mod is None and block_mask is None
+            )
         return current_flex_attention(
             query,
             key,
@@ -1969,6 +1980,21 @@ def _register_npu_inductor_flex_attention():
         score_mod_other_buffers,
         mask_mod_other_buffers,
     ):
+        implementation = npu_config.flex_attention.implementation
+        if implementation == "tilelang":
+            from torch_npu._inductor import _get_backend
+            if _get_backend() != "tilelang":
+                raise NotImplementedError(
+                    "TileLang FlexAttention requires npu_backend='tilelang'"
+                )
+            from .tilelang_flex_attention import lower_tilelang_flex_attention
+            return lower_tilelang_flex_attention(
+                query, key, value, subgraph, block_mask, scale, kernel_options,
+                score_mod_other_buffers, mask_mod_other_buffers,
+            )
+        if implementation != "triton":
+            raise ValueError(f"Unknown FlexAttention implementation: {implementation}")
+
         small_dqk = V.graph.sizevars.evaluate_expr(
             sympy.Lt(query.get_size()[-1], 16)
         )
@@ -2634,6 +2660,8 @@ def _register_npu_inductor_flex_attention():
 
     @register_lowering(torch.ops.higher_order.flex_attention_backward, type_promotion_kind=None)
     def flex_attention_backward(*args, **kwargs):
+        if npu_config.flex_attention.implementation != "triton":
+            raise NotImplementedError("TileLang FlexAttention backward is not implemented")
         (
             query,
             key,

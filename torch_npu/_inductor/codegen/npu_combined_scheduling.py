@@ -50,6 +50,12 @@ class NPUCombinedScheduling(CUDACombinedScheduling, TritonScheduling):
             return self._catlass_scheduling
         return self._triton_scheduling
 
+    def can_fuse_reduction_epilogue(
+        self, node1: BaseSchedulerNode, node2: BaseSchedulerNode
+    ) -> bool:
+        # PyTorch 2.14's inherited hook requires a CUDA-only GEMM scheduler.
+        return False
+
     def can_fuse_vertical(self, node1: BaseSchedulerNode, node2: BaseSchedulerNode):
         if self._catlass_scheduling.can_fuse_vertical(node1, node2):
             return True

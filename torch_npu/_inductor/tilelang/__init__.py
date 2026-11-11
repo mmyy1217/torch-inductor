@@ -3,9 +3,11 @@
 
 def initialize_tilelang_backend() -> None:
     """Register TileLang as the NPU Inductor scheduling backend."""
+    from torch.nn.attention import flex_attention
     from torch._inductor import lowering as inductor_lowering
     from torch._inductor.codegen.common import register_backend_for_device
 
+    from torch_npu._inductor import _apply_common_npu_triton_patches
     from torch_npu._inductor.codegen.cpp_wrapper_npu import CppWrapperNpu
     from torch_npu._inductor.codegen.ir import patch_indexing, patch_loop_body
     from torch_npu._inductor.codegen.wrapper import NPUPythonWrapperCodeGen
@@ -16,6 +18,9 @@ def initialize_tilelang_backend() -> None:
         _register_npu_inductor_addmm,
         _register_npu_inductor_bmm,
         _register_npu_inductor_mm,
+        _register_npu_inductor_flex_attention,
+        _validate_device,
+        patch_flex_attention,
     )
     from torch_npu._inductor.lowering import (
         _register_npu_inductor_fallbacks,
@@ -42,6 +47,12 @@ def initialize_tilelang_backend() -> None:
     _register_npu_inductor_mm()
     _register_npu_inductor_addmm()
     _register_npu_inductor_bmm()
+
+    # Templates share the existing NPU lowering and wrapper infrastructure.
+    _apply_common_npu_triton_patches()
+    patch_flex_attention()
+    flex_attention._validate_device = _validate_device
+    _register_npu_inductor_flex_attention()
 
     patch_scheduler()
     disable_foreach()

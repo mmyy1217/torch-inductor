@@ -1,0 +1,919 @@
+{
+  "task": "SOURCE_GUIDED_OPTIMIZATION.md",
+  "environment": {
+    "device": "Ascend950PR_9579",
+    "cube_core_num": 28,
+    "vector_core_num": 56,
+    "physical_device": 7,
+    "exclusive": true,
+    "torch": "2.14.0+cpu",
+    "torch_npu": "2.14.0",
+    "triton_ascend": "3.6.0.post2",
+    "cann_runtime": "9.2.0",
+    "cann_bisheng_compiler": "9.2.0 (timestamp 20260930)",
+    "opp_version": "9.2.0 (timestamp 20260930_000324083)",
+    "tilelang_commit": "47976f210de3598444003e9b05de8204dfa7ff88",
+    "tilelang_version": "0.1.15",
+    "tilelang_dirty": false,
+    "branch_head": "0cdb61c9d1ce132e4a15052043f7d750bd5f6101"
+  },
+  "sources": {
+    "parent_persistent_sha256": "b800d9f5054731e04c558d82b7967b4ef8c8bafd56404d72154155300753c301",
+    "parent_expected_sha256": "b800d9f5054731e04c558d82b7967b4ef8c8bafd56404d72154155300753c301",
+    "candidate_sha256": "79301cb7ea587a4f403d13a262ca6db5494607e4530c372164aa3dc01e7d48c0",
+    "diag_noclear_sha256": "8364af1bc7753152eb7ba6728e2b5ae92d22c712f6cd559245dc1518976e00ab",
+    "generated_device_code_sha256": {
+      "parent": "6423981d11fc33771577433c6bc626219d81e571efb68715c89daf372899f431",
+      "candidate": "db7bf59f5d949daa9527519b1a4c5c5c4eb2de3eceeab745299d3390d5c41bf8",
+      "diag_noclear": "fb6567a617213ba46de6cb69556d1fae841d6e11f230d0b4a5ddd87ccf4c33b6"
+    },
+    "native_source_root": "/usr/local/Ascend/cann/opp/built-in/op_impl/ai_core/tbe/impl/ops_transformer/ascendc",
+    "native_source_revision": "installed OPP 9.2.0; NOT the PR author's custom build"
+  },
+  "confirmed_runtime_facts": {
+    "block_num_all_arms_pr_shape": 28,
+    "mix_block_num_all_arms_pr_shape": 56,
+    "fas_operator": "aclnnFlashAttentionScoreV4_FlashAttentionScore_FlashAttentionScore",
+    "fia_operator": "FusedInferAttentionScore",
+    "d128_output_position": "VECCALC (UB), per GetC2Position in flash_attention_score_common_regbase_arch35.h:220-223"
+  },
+  "pipe_times_us": {
+    "short": {
+      "tilelang": {
+        "duration": 151.1,
+        "mac": 102.6,
+        "mte1": 55.0,
+        "mte2": 94.0,
+        "fixpipe": 149.2,
+        "vec": 122.0
+      },
+      "fas": {
+        "duration": 109.1,
+        "mac": 99.1,
+        "mte1": 66.8,
+        "mte2": 93.0,
+        "fixpipe": 94.4,
+        "vec": 83.0
+      }
+    },
+    "long": {
+      "tilelang": {
+        "duration": 246.0,
+        "mac": 212.9,
+        "mte1": 122.0,
+        "mte2": 204.6,
+        "fixpipe": 244.1,
+        "vec": 203.9
+      },
+      "fas": {
+        "duration": 218.1,
+        "mac": 207.3,
+        "mte1": 138.4,
+        "mte2": 188.7,
+        "fixpipe": 199.2,
+        "vec": 163.2
+      }
+    },
+    "pr": {
+      "tilelang": {
+        "duration": 3521.1,
+        "mac": 3133.0,
+        "mte1": 1794.2,
+        "mte2": 2721.0,
+        "fixpipe": 3519.3,
+        "vec": 3211.7
+      },
+      "fas": {
+        "duration": 3235.9,
+        "mac": 3197.8,
+        "mte1": 2139.2,
+        "mte2": 2825.2,
+        "fixpipe": 3103.7,
+        "vec": 2740.2
+      }
+    },
+    "note": "per-task median from msprof op_summary; concurrent AIC/AIV records not summed"
+  },
+  "fixpipe_analysis": {
+    "fixpipe_over_duration": {
+      "tilelang": {
+        "short": 0.987,
+        "long": 0.992,
+        "pr": 0.999
+      },
+      "fas": {
+        "short": 0.865,
+        "long": 0.913,
+        "pr": 0.959
+      }
+    },
+    "gap_per_kv_block_us": {
+      "short": 6.85,
+      "long": 1.4,
+      "pr": 6.49
+    },
+    "interpretation": "TileLang is fixpipe-bound in every shape; FAS keeps 5-13% headroom. The gap is a per-KV-block fixed cost. The long-shape value does not follow the short/pr pattern and is left unexplained."
+  },
+  "source_differences": [
+    {
+      "dimension": "softmax first KV",
+      "fas": "s2LoopCount==0 instantiates ProcessVec1VfDn<...,isUpdate=false,...> (flash_attention_noquant_block_vec_base.h:479-530) -> ProcessVec1DnNoUpdateVF",
+      "ours": "every KV block runs the generic online update in softmax_pr16",
+      "confirmed": true
+    },
+    {
+      "dimension": "output update first KV",
+      "fas": "s2LoopCount==0 -> DataCopy(vec2ResUb, mmRes, vec2CalcSize), plain copy, no rescale (:1372-1374); later blocks use FlashUpdateNew",
+      "ours": "every KV block runs accumulate_output (O = alpha*O + O_tmp)",
+      "confirmed": true
+    },
+    {
+      "dimension": "output finalize",
+      "fas": "LastDivNew at s2LoopCount==s2LoopLimit",
+      "ours": "finalize_cast divides by l",
+      "confirmed": true,
+      "equivalent": true
+    },
+    {
+      "dimension": "work assignment",
+      "fas": "CalcS1Coord/CalcS2Coord split S1 across cores",
+      "ours": "persistent loops local_mt over tiles, kv over KV blocks",
+      "confirmed": true,
+      "note": "same block count does not prove same internal tile shape"
+    },
+    {
+      "dimension": "QK/PV tiling",
+      "fas": "s1BaseSize x s2BaseSize from template types, l1BaseD=128 for BF16; IterateBmm2 with 3-buff L1 ring",
+      "ours": "BR=128, BC=128, D=128; pv with L1 V_shared, L0C->UB dual_copy",
+      "confirmed": true,
+      "equivalent_nominal_tile": true
+    },
+    {
+      "dimension": "buffer lifetimes",
+      "fas": "taskIdMod2/taskIdMod3/multiCoreIdxMod3 ring buffers",
+      "ours": "kv%3 / kv&1 indexed buffers in generated code",
+      "confirmed": true
+    }
+  ],
+  "candidate": {
+    "name": "cand_noclear_firstkv",
+    "description": "D128-only: drop per-Q-tile clear_O_ub AND overwrite O_ub from O_tmp_ub on kv==0 instead of the generic rescale. The overwrite makes the clear removal safe: O_ub's prior contents are never read.",
+    "patch_scope": "single file, persistent.py only; parent file preserved",
+    "intended_change_materialized_in_device_code": false,
+    "why_not": "the if kv==0 inside T.Pipelined is rewritten by software pipelining into prologue predicates (kv==1, kv==3, kv==64, ...), adding 5 extra predicate nests and breaking the steady-state pipeline"
+  },
+  "numerical_gate": {
+    "cases": {
+      "short": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.001953125,
+        "shape": [
+          1,
+          64,
+          1,
+          1024,
+          1024,
+          128
+        ],
+        "scale": 0.08838834764831845
+      },
+      "long": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.00048828125,
+        "shape": [
+          1,
+          8,
+          1,
+          4096,
+          4096,
+          128
+        ],
+        "scale": 0.08838834764831845
+      },
+      "pr": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.00048828125,
+        "shape": [
+          1,
+          32,
+          1,
+          8192,
+          8192,
+          128
+        ],
+        "scale": 0.08838834764831845
+      },
+      "small-mha": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.001953125,
+        "shape": [
+          1,
+          4,
+          4,
+          256,
+          256,
+          128
+        ],
+        "scale": 0.08838834764831845
+      },
+      "small-gqa": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.001953125,
+        "shape": [
+          1,
+          8,
+          2,
+          512,
+          512,
+          128
+        ],
+        "scale": 0.08838834764831845
+      },
+      "kv1": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.00390625,
+        "shape": [
+          1,
+          8,
+          1,
+          256,
+          128,
+          128
+        ],
+        "scale": 0.08838834764831845
+      },
+      "kv2": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.001953125,
+        "shape": [
+          1,
+          8,
+          1,
+          256,
+          256,
+          128
+        ],
+        "scale": 0.08838834764831845
+      },
+      "scale0": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.0,
+        "shape": [
+          1,
+          8,
+          1,
+          1024,
+          1024,
+          128
+        ],
+        "scale": 0.0
+      },
+      "scaleneg": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.00390625,
+        "shape": [
+          1,
+          8,
+          1,
+          1024,
+          1024,
+          128
+        ],
+        "scale": -0.125
+      },
+      "batch2": {
+        "rc": 0,
+        "correct": true,
+        "max_abs_error": 0.0009765625,
+        "shape": [
+          2,
+          8,
+          2,
+          512,
+          2048,
+          128
+        ],
+        "scale": 0.08838834764831845
+      }
+    },
+    "passed": 10,
+    "total": 10,
+    "reference": "FP32 CPU reference chunked over 128 rows, full output, atol=rtol=0.03",
+    "finiteness": "all elements checked before and after timing",
+    "fp32_reference_rounded_to_bf16_before_compare": false
+  },
+  "timing": {
+    "short": {
+      "parent": {
+        "round1": {
+          "median_ms": 0.19301049411296844,
+          "samples_ms": [
+            0.18285000324249268,
+            0.2238609939813614,
+            0.20148999989032745,
+            0.1958010047674179,
+            0.19569499790668488,
+            0.19373999536037445,
+            0.19873200356960297,
+            0.19321799278259277,
+            0.19443100690841675,
+            0.19395600259304047,
+            0.19417999684810638,
+            0.19325800240039825,
+            0.19280299544334412,
+            0.19266200065612793,
+            0.19382600486278534,
+            0.1934099942445755,
+            0.19172699749469757,
+            0.19037799537181854,
+            0.19153599441051483,
+            0.1911579966545105,
+            0.19058799743652344,
+            0.19227099418640137,
+            0.19375799596309662,
+            0.1979759931564331,
+            0.19252200424671173,
+            0.19107800722122192,
+            0.19064700603485107,
+            0.19027100503444672,
+            0.18991099298000336,
+            0.19051499664783478
+          ],
+          "max_abs_error": 0.001953125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        },
+        "round2": {
+          "median_ms": 0.19465850293636322,
+          "samples_ms": [
+            0.18505699932575226,
+            0.22989800572395325,
+            0.20419399440288544,
+            0.19400900602340698,
+            0.19594399631023407,
+            0.1939300000667572,
+            0.2405090034008026,
+            0.1964620053768158,
+            0.19606299698352814,
+            0.19557100534439087,
+            0.19722700119018555,
+            0.19507700204849243,
+            0.19302299618721008,
+            0.19464699923992157,
+            0.19518999755382538,
+            0.1951349973678589,
+            0.19263499975204468,
+            0.19280999898910522,
+            0.19467000663280487,
+            0.19219499826431274,
+            0.19240300357341766,
+            0.19291700422763824,
+            0.19576700031757355,
+            0.20597299933433533,
+            0.19536100327968597,
+            0.19319100677967072,
+            0.1935500055551529,
+            0.19399599730968475,
+            0.19307200610637665,
+            0.1934880018234253
+          ],
+          "max_abs_error": 0.001953125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        }
+      },
+      "cand_noclear_firstkv": {
+        "round1": {
+          "median_ms": 0.19550249725580215,
+          "samples_ms": [
+            0.1881520003080368,
+            0.23004400730133057,
+            0.20412999391555786,
+            0.19753199815750122,
+            0.19625799357891083,
+            0.1955679953098297,
+            0.19716599583625793,
+            0.194705992937088,
+            0.20626899600028992,
+            0.19992199540138245,
+            0.1972150057554245,
+            0.1947679966688156,
+            0.19602200388908386,
+            0.19725200533866882,
+            0.1958490014076233,
+            0.1993439942598343,
+            0.1954369992017746,
+            0.19468900561332703,
+            0.1937739998102188,
+            0.1702439934015274,
+            0.19387400150299072,
+            0.19216400384902954,
+            0.19536399841308594,
+            0.19319599866867065,
+            0.19362500309944153,
+            0.19717800617218018,
+            0.19578300416469574,
+            0.1928199976682663,
+            0.19358700513839722,
+            0.19296300411224365
+          ],
+          "max_abs_error": 0.001953125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        },
+        "round2": {
+          "median_ms": 0.19630400091409683,
+          "samples_ms": [
+            0.18452799320220947,
+            0.23769399523735046,
+            0.2033739984035492,
+            0.1963379979133606,
+            0.1970749944448471,
+            0.19604699313640594,
+            0.19675399363040924,
+            0.19562700390815735,
+            0.1970919966697693,
+            0.19578400254249573,
+            0.19627000391483307,
+            0.19580599665641785,
+            0.197734996676445,
+            0.1954219937324524,
+            0.1984660029411316,
+            0.2026440054178238,
+            0.19846400618553162,
+            0.2247759997844696,
+            0.197176992893219,
+            0.19759100675582886,
+            0.19710500538349152,
+            0.19565600156784058,
+            0.19764800369739532,
+            0.19367800652980804,
+            0.19418999552726746,
+            0.19516399502754211,
+            0.1933249980211258,
+            0.194240003824234,
+            0.19370099902153015,
+            0.19591400027275085
+          ],
+          "max_abs_error": 0.001953125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        }
+      }
+    },
+    "long": {
+      "parent": {
+        "round1": {
+          "median_ms": 0.2879824936389923,
+          "samples_ms": [
+            0.279449999332428,
+            0.3199540078639984,
+            0.2959269881248474,
+            0.29545900225639343,
+            0.2936300039291382,
+            0.28857800364494324,
+            0.28896498680114746,
+            0.2885800004005432,
+            0.2881860136985779,
+            0.28738999366760254,
+            0.28954800963401794,
+            0.29739999771118164,
+            0.28712600469589233,
+            0.2865779995918274,
+            0.28998100757598877,
+            0.2888979911804199,
+            0.2910979986190796,
+            0.2879050076007843,
+            0.2870410084724426,
+            0.2873620092868805,
+            0.2859469950199127,
+            0.28706398606300354,
+            0.28793099522590637,
+            0.28542399406433105,
+            0.28630998730659485,
+            0.28803399205207825,
+            0.28772398829460144,
+            0.28619900345802307,
+            0.287106990814209,
+            0.2880699932575226
+          ],
+          "max_abs_error": 0.00048828125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        },
+        "round2": {
+          "median_ms": 0.29201000928878784,
+          "samples_ms": [
+            0.2724429965019226,
+            0.32089298963546753,
+            0.3021399974822998,
+            0.29535600543022156,
+            0.29486900568008423,
+            0.2939330041408539,
+            0.2919340133666992,
+            0.29066601395606995,
+            0.29657799005508423,
+            0.2952579855918884,
+            0.2944140136241913,
+            0.29324400424957275,
+            0.2925660014152527,
+            0.29171299934387207,
+            0.29360198974609375,
+            0.29627200961112976,
+            0.2910880148410797,
+            0.2915560007095337,
+            0.29349300265312195,
+            0.29208600521087646,
+            0.2907699942588806,
+            0.28913000226020813,
+            0.27286800742149353,
+            0.28835099935531616,
+            0.2932020127773285,
+            0.2893019914627075,
+            0.29048898816108704,
+            0.2889609932899475,
+            0.2896000146865845,
+            0.29026201367378235
+          ],
+          "max_abs_error": 0.00048828125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        }
+      },
+      "cand_noclear_firstkv": {
+        "round1": {
+          "median_ms": 0.35300949215888977,
+          "samples_ms": [
+            0.3501589894294739,
+            0.3814469873905182,
+            0.35618001222610474,
+            0.35572299361228943,
+            0.35640498995780945,
+            0.35102200508117676,
+            0.35501500964164734,
+            0.35720598697662354,
+            0.34979599714279175,
+            0.36460599303245544,
+            0.35273799300193787,
+            0.34485098719596863,
+            0.35449498891830444,
+            0.3532809913158417,
+            0.34689000248908997,
+            0.35475099086761475,
+            0.35555300116539,
+            0.3550879955291748,
+            0.3558250069618225,
+            0.3569679856300354,
+            0.3519879877567291,
+            0.34893399477005005,
+            0.3591749966144562,
+            0.3472070097923279,
+            0.35119301080703735,
+            0.34041500091552734,
+            0.3513849973678589,
+            0.3455809950828552,
+            0.32649099826812744,
+            0.35268500447273254
+          ],
+          "max_abs_error": 0.00048828125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        },
+        "round2": {
+          "median_ms": 0.36133599281311035,
+          "samples_ms": [
+            0.3342069983482361,
+            0.3874039947986603,
+            0.3656029999256134,
+            0.3590739965438843,
+            0.3599129915237427,
+            0.3682520091533661,
+            0.36510100960731506,
+            0.36576199531555176,
+            0.3642140030860901,
+            0.3612709939479828,
+            0.3598180115222931,
+            0.3570370078086853,
+            0.3575499951839447,
+            0.35697200894355774,
+            0.35153400897979736,
+            0.35998401045799255,
+            0.36347201466560364,
+            0.3795489966869354,
+            0.3621259927749634,
+            0.3635129928588867,
+            0.36198899149894714,
+            0.3680869936943054,
+            0.3614009916782379,
+            0.3581019937992096,
+            0.3647330105304718,
+            0.3558270037174225,
+            0.3592190146446228,
+            0.35205700993537903,
+            0.3554379940032959,
+            0.36538299918174744
+          ],
+          "max_abs_error": 0.00048828125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        }
+      }
+    },
+    "pr": {
+      "parent": {
+        "round1": {
+          "median_ms": 3.5736080408096313,
+          "samples_ms": [
+            3.516726016998291,
+            3.574054002761841,
+            3.5220720767974854,
+            3.54750394821167,
+            3.5014519691467285,
+            3.5156939029693604,
+            3.5090529918670654,
+            3.5527238845825195,
+            3.581057071685791,
+            3.5606770515441895,
+            3.569650888442993,
+            3.5844550132751465,
+            3.5476410388946533,
+            3.616921901702881,
+            3.5752298831939697,
+            3.5821850299835205,
+            3.573162078857422,
+            3.6021320819854736,
+            3.6035540103912354,
+            3.60276198387146,
+            3.5818850994110107,
+            3.574431896209717,
+            3.5916619300842285,
+            3.5874240398406982,
+            3.6298890113830566,
+            3.547800064086914,
+            3.5714900493621826,
+            3.551002025604248,
+            3.5856149196624756,
+            3.544377088546753
+          ],
+          "max_abs_error": 0.00048828125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        },
+        "round2": {
+          "median_ms": 3.552093982696533,
+          "samples_ms": [
+            3.4863579273223877,
+            3.6076419353485107,
+            3.554450035095215,
+            3.5711350440979004,
+            3.5432910919189453,
+            3.5997750759124756,
+            3.5474400520324707,
+            3.5309739112854004,
+            3.546623945236206,
+            3.5476698875427246,
+            3.517209053039551,
+            3.6125059127807617,
+            3.5478169918060303,
+            3.543426036834717,
+            3.5899240970611572,
+            3.550266981124878,
+            3.587116003036499,
+            3.533499002456665,
+            3.546858072280884,
+            3.5312769412994385,
+            3.560753107070923,
+            3.556410074234009,
+            3.595020055770874,
+            3.6015050411224365,
+            3.556636095046997,
+            3.5539209842681885,
+            3.5718469619750977,
+            3.544015884399414,
+            3.6294400691986084,
+            3.537559986114502
+          ],
+          "max_abs_error": 0.00048828125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        }
+      },
+      "cand_noclear_firstkv": {
+        "round1": {
+          "median_ms": 4.634328603744507,
+          "samples_ms": [
+            4.606482028961182,
+            4.703361988067627,
+            4.671588897705078,
+            4.652792930603027,
+            4.643911838531494,
+            4.6346211433410645,
+            4.635232925415039,
+            4.623137950897217,
+            4.633935928344727,
+            4.634795188903809,
+            4.644627094268799,
+            4.6386919021606445,
+            4.634757995605469,
+            4.655605792999268,
+            4.638638973236084,
+            4.634829044342041,
+            4.634036064147949,
+            4.632019996643066,
+            4.632856845855713,
+            4.631840229034424,
+            4.629345893859863,
+            4.640823841094971,
+            4.631011009216309,
+            4.632421016693115,
+            4.6335368156433105,
+            4.623483180999756,
+            4.631748199462891,
+            4.629456996917725,
+            4.631115913391113,
+            4.660162925720215
+          ],
+          "max_abs_error": 0.00048828125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        },
+        "round2": {
+          "median_ms": 4.63413143157959,
+          "samples_ms": [
+            4.617005825042725,
+            4.69497013092041,
+            4.6576151847839355,
+            4.636506080627441,
+            4.640406131744385,
+            4.637813091278076,
+            4.634153842926025,
+            4.637417793273926,
+            4.63572883605957,
+            4.635213851928711,
+            4.624529838562012,
+            4.634109020233154,
+            4.635036945343018,
+            4.6347150802612305,
+            4.6252288818359375,
+            4.633861064910889,
+            4.634343147277832,
+            4.611508846282959,
+            4.635034084320068,
+            4.632654190063477,
+            4.630402088165283,
+            4.629358768463135,
+            4.633458137512207,
+            4.6314802169799805,
+            4.629333019256592,
+            4.63282585144043,
+            4.628995895385742,
+            4.634705066680908,
+            4.630906105041504,
+            4.634294033050537
+          ],
+          "max_abs_error": 0.00048828125,
+          "post_max_abs_error": null,
+          "post_correct": true
+        }
+      }
+    }
+  },
+  "attribution_probe": {
+    "variant": "diag_noclear (clear_O_ub removed, NO overwrite; numerically correct only because alpha==0 masks garbage; NOT a candidate)",
+    "results": {
+      "long": {
+        "median_ms": 0.2837260067462921,
+        "samples_ms": [
+          0.27104800939559937,
+          0.30477601289749146,
+          0.29149699211120605,
+          0.2857069969177246,
+          0.2856940031051636,
+          0.28266000747680664,
+          0.2840630114078522,
+          0.28271201252937317,
+          0.2843160033226013,
+          0.28338900208473206,
+          0.28853198885917664,
+          0.2852570116519928,
+          0.2870199978351593,
+          0.28252899646759033,
+          0.2828640043735504,
+          0.28822699189186096,
+          0.28119900822639465,
+          0.2827419936656952,
+          0.2866860032081604,
+          0.2822929918766022,
+          0.28123900294303894,
+          0.2803640067577362,
+          0.285086989402771,
+          0.28571900725364685,
+          0.2818169891834259,
+          0.28632399439811707,
+          0.2826850116252899,
+          0.28496500849723816,
+          0.2816689908504486,
+          0.28089800477027893
+        ],
+        "correct": true,
+        "max_abs_error": 0.00048828125
+      },
+      "pr": {
+        "median_ms": 3.5409079790115356,
+        "samples_ms": [
+          3.4932680130004883,
+          3.537766933441162,
+          3.52209210395813,
+          3.437494993209839,
+          3.4356770515441895,
+          3.4742720127105713,
+          3.4945969581604004,
+          3.534569025039673,
+          3.5111000537872314,
+          3.5247750282287598,
+          3.4850029945373535,
+          3.5404179096221924,
+          3.524660110473633,
+          3.5500290393829346,
+          3.6931800842285156,
+          3.5959579944610596,
+          3.539665937423706,
+          3.6230640411376953,
+          3.541398048400879,
+          3.5528430938720703,
+          3.5715320110321045,
+          3.605966091156006,
+          3.570322036743164,
+          3.5662200450897217,
+          3.603940010070801,
+          3.582689046859741,
+          3.621056079864502,
+          3.5778279304504395,
+          3.5667829513549805,
+          3.527535915374756
+        ],
+        "correct": true,
+        "max_abs_error": 0.00048828125
+      }
+    },
+    "parent_reference_ms": {
+      "long": 0.2879824936389923,
+      "pr": 3.5736080408096313
+    },
+    "conclusion": "removing the per-Q-tile clear alone is worth only 1-2%; the gap is fixpipe"
+  },
+  "recommendation": {
+    "integrate": false,
+    "reason": "candidate is numerically correct but 19-23% slower on long and pr. The first-KV lead is real in FAS source but is the wrong lever: our kernel is fixpipe-bound (98.7-99.9% of duration) and the removable vector work is only 1-2%.",
+    "next_direction": "fixpipe path (~6.5 us per KV block), larger than this task's budget"
+  },
+  "caveats": [
+    "FAS/FIA source is installed 9.2.0, not the PR author's custom build",
+    "equal 28/56 block counts do not prove identical internal scheduling",
+    "long-shape fixpipe gap does not follow the short/pr pattern; left unexplained",
+    "native numbers are same-session context, not a simultaneous controlled native-win measurement"
+  ],
+  "timing_ratios": {
+    "definition": "parent_ms / candidate_ms; >1 means the candidate is faster",
+    "values": {
+      "short": {
+        "round1": 0.9872533436768683,
+        "round2": 0.9916176034616142
+      },
+      "long": {
+        "round1": 0.8157924929377571,
+        "round2": 0.8081398341067584
+      },
+      "pr": {
+        "round1": 0.7711166700441094,
+        "round2": 0.7665069571593413
+      }
+    }
+  },
+  "protocol": {
+    "warmup": 10,
+    "samples": 30,
+    "fresh_process_per_row": true,
+    "round1_order": [
+      "parent",
+      "candidate"
+    ],
+    "round2_order": [
+      "candidate",
+      "parent"
+    ],
+    "timing_runs": 12,
+    "path": "Inductor user API (torch.compile, npu_backend=tilelang, persistent overlay, cube-cores=28)",
+    "device_occupancy_checked_before_each_row": true,
+    "profiler": "msprof --task-time=l1 --ai-core=on --aic-mode=task-based"
+  }
+}

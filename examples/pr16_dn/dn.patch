@@ -1,0 +1,322 @@
+--- parent_core.py
++++ candidate_core.py
+@@ -1,4 +1,6 @@
+-"""Shared FlashAttention forward kernel builder for Ascend NPU (Cube + Vector).
++"""DN-only FlashAttention forward derived from PR16 core.py.
++
++Shared FlashAttention forward kernel builder for Ascend NPU (Cube + Vector).
+ 
+ Both MHA and GQA reduce to the same per-tile computation::
+ 
+@@ -43,12 +45,11 @@
+     manual_schedule=False,
+     return_lse=False,
+ ):
+-    """Keep each Q tile in its own L0A buffer for the complete KV loop.
+-
+-    Q is loaded from L1 to qk_a_l0 once per query tile. The KV loop only
+-    reads that buffer; PV continues to use the separate pv_a_l0 allocation.
+-    Both GEMMs and their L0C-to-UB drains use paired UnitFlag control 3.
+-    Shapes, tile sizes, arithmetic and launch geometry match the original.
++    """Keep each Q tile resident for the complete KV loop.
++
++    DN layout stores K on L0A and the resident Q tile on L0B, so the first
++    GEMM is K @ Q^T. PV transposes the joined P panels back to query-major.
++    Both GEMMs and their L0C-to-UB drains keep paired UnitFlag control 3.
+     """
+     tiling = tiling or FwdTiling()
+ 
+@@ -90,7 +91,7 @@
+     @T.macro
+     def qk(kv, K, K_shared, qk_a_l0, qk_b_l0, qk_acc_l0c, S_ub):
+         T.copy(K[kv * BC : (kv + 1) * BC, 0:D], K_shared[0:BC, 0:D])
+-        T.copy(K_shared[0:BC, 0:D], qk_b_l0)
++        T.copy(K_shared[0:BC, 0:D], qk_a_l0)
+         T.gemm(
+             qk_a_l0,
+             qk_b_l0,
+@@ -99,116 +100,91 @@
+             clear_accum=True,
+             unit_flag_ctrl=3,
+         )
+-        T.dual_copy(qk_acc_l0c, S_ub[0:ROWS, 0:BC], unit_flag_ctrl=3)
++        T.dual_copy(qk_acc_l0c, S_ub[0:BC, 0:ROWS], unit_flag_ctrl=3)
+ 
+     @T.macro
+     def softmax(S_ub, P_nz_ub, m_ub, l_ub, alpha_ub, old_m_ub, row_sum_ub):
++        # Lanes are the 64 queries owned by this AIV. The key axis is the loop.
+         with T.SimdVF(latency=735):
+-            softmax_full = S.pset(32, "PAT_ALL")
+-            softmax_one = S.pset(32, "PAT_VL1")
+-            softmax_b16 = S.pset(16, "PAT_VL128")
+-            dst_nz_ptr = S.make_ubuf_ptr(
+-                T.access_ptr(P_nz_ub[0, 0], "w", ROWS + 1, BC),
+-                "bfloat16",
+-            )
+-
+-            old_m_reg = S.vld(m_ub[0], "NORM")
+-
+-            for r in range(0, ROWS, 2):
+-                # A positive scale preserves ordering; scale the row maxima once.
+-                # This is a compile-time choice, retaining the old path otherwise.
+-                s00 = S.vld(S_ub[r, 0], "NORM") if SCALE_AFTER_MAX else S.vmuls(S.vld(S_ub[r, 0], "NORM"), T.float32(scale), softmax_full)
+-                s01 = S.vld(S_ub[r, VL], "NORM") if SCALE_AFTER_MAX else S.vmuls(S.vld(S_ub[r, VL], "NORM"), T.float32(scale), softmax_full)
+-                s10 = (
+-                    S.vld(S_ub[r + 1, 0], "NORM")
+-                    if SCALE_AFTER_MAX
+-                    else S.vmuls(S.vld(S_ub[r + 1, 0], "NORM"), T.float32(scale), softmax_full)
+-                )
+-                s11 = (
+-                    S.vld(S_ub[r + 1, VL], "NORM")
+-                    if SCALE_AFTER_MAX
+-                    else S.vmuls(S.vld(S_ub[r + 1, VL], "NORM"), T.float32(scale), softmax_full)
+-                )
+-
+-                max0 = S.vcmax(S.vmax(s00, s01, softmax_full), softmax_full)
+-                max1 = S.vcmax(S.vmax(s10, s11, softmax_full), softmax_full)
+-                S.vsts(m_ub[r], max0, softmax_one, "ONEPT_B32")
+-                S.vsts(m_ub[r + 1], max1, softmax_one, "ONEPT_B32")
+-
+-            S.mem_bar("VST_VLD")
+-            block_max_scaled = (
+-                S.vmuls(S.vld(m_ub[0], "NORM"), T.float32(scale), softmax_full) if SCALE_AFTER_MAX else S.vld(m_ub[0], "NORM")
+-            )
+-            merged_max = S.vmax(block_max_scaled, old_m_reg, softmax_full)
+-            S.vsts(m_ub[0], merged_max, softmax_full, "NORM_B32")
+-            S.mem_bar("VST_VLD")
+-
+-            for r in range(0, ROWS, 2):
+-                max0 = S.vld(m_ub[r], "BRC_B32")
+-                max1 = S.vld(m_ub[r + 1], "BRC_B32")
+-                p00, p01 = S.vld2(S_ub[r, 0], "DINTLV_B32")
+-                p10, p11 = S.vld2(S_ub[r + 1, 0], "DINTLV_B32")
+-                # Recompute scaling instead of writing scaled scores back to UB.
+-                e00 = S.vexpdif(S.vmuls(p00, T.float32(scale), softmax_full), max0, softmax_full)
+-                e10 = S.vexpdif(S.vmuls(p10, T.float32(scale), softmax_full), max1, softmax_full)
+-                e01 = S.vexpdif(S.vmuls(p01, T.float32(scale), softmax_full), max0, softmax_full)
+-                e11 = S.vexpdif(S.vmuls(p11, T.float32(scale), softmax_full), max1, softmax_full)
+-                row_sum0 = S.vcadd(S.vadd(e00, e01, softmax_full), softmax_full)
+-                row_sum1 = S.vcadd(S.vadd(e10, e11, softmax_full), softmax_full)
+-                S.vsts(row_sum_ub[r], row_sum0, softmax_one, "ONEPT_B32")
+-                S.vsts(row_sum_ub[r + 1], row_sum1, softmax_one, "ONEPT_B32")
+-
+-                even_bf16_0 = S.vcvt(e00, "bfloat16", softmax_full, sat=False, part=0)
+-                even_bf16_1 = S.vcvt(e10, "bfloat16", softmax_full, sat=False, part=0)
+-                odd_bf16_0 = S.vcvt(e01, "bfloat16", softmax_full, sat=False, part=1)
+-                odd_bf16_1 = S.vcvt(e11, "bfloat16", softmax_full, sat=False, part=1)
+-                merged_bits0 = S.vor(
+-                    T.reinterpret(even_bf16_0, "uint16x128"),
+-                    T.reinterpret(odd_bf16_0, "uint16x128"),
+-                    softmax_b16,
+-                )
+-                merged_bits1 = S.vor(
+-                    T.reinterpret(even_bf16_1, "uint16x128"),
+-                    T.reinterpret(odd_bf16_1, "uint16x128"),
+-                    softmax_b16,
+-                )
+-                dst_nz_ptr = S.vsstb(
+-                    T.reinterpret(merged_bits0, "bfloat16x128"),
+-                    dst_nz_ptr,
+-                    T.int32(((ROWS + 1) << 16) | 1),
+-                    softmax_b16,
+-                    update=True,
+-                )
+-                dst_nz_ptr = S.vsstb(
+-                    T.reinterpret(merged_bits1, "bfloat16x128"),
+-                    dst_nz_ptr,
+-                    T.int32(((ROWS + 1) << 16) | 1),
+-                    softmax_b16,
+-                    update=True,
+-                )
+-
+-            S.mem_bar("VST_VLD")
+-            alpha_reg = S.vexpdif(old_m_reg, merged_max, softmax_full)
+-            S.vsts(alpha_ub[0], alpha_reg, softmax_full, "NORM_B32")
+-            # Keep the online denominator update in one FP32 fused multiply-add.
+-            l_updated = S.alloc_var(accum_dtype)
+-            l_updated = S.vld(l_ub[0], "NORM")
+-            S.vmadd(l_updated, alpha_reg, S.vld(row_sum_ub[0], "NORM"), softmax_full)
+-            S.vsts(l_ub[0], l_updated, softmax_full, "NORM_B32")
++            full = S.pset(32, "PAT_ALL")
++            packed_mask = S.pset(16, "PAT_VL64")
++            max0 = S.alloc_var("float32")
++            max1 = S.alloc_var("float32")
++            max2 = S.alloc_var("float32")
++            max3 = S.alloc_var("float32")
++            max0 = S.vdup(-T.infinity("float32"), "float32", full)
++            max1 = S.vdup(-T.infinity("float32"), "float32", full)
++            max2 = S.vdup(-T.infinity("float32"), "float32", full)
++            max3 = S.vdup(-T.infinity("float32"), "float32", full)
++            for r in range(0, BC, 4):
++                x0 = S.vld(S_ub[r, 0], "NORM")
++                x1 = S.vld(S_ub[r + 1, 0], "NORM")
++                x2 = S.vld(S_ub[r + 2, 0], "NORM")
++                x3 = S.vld(S_ub[r + 3, 0], "NORM")
++                if not SCALE_AFTER_MAX:
++                    x0 = S.vmuls(x0, T.float32(scale), full)
++                    x1 = S.vmuls(x1, T.float32(scale), full)
++                    x2 = S.vmuls(x2, T.float32(scale), full)
++                    x3 = S.vmuls(x3, T.float32(scale), full)
++                max0 = S.vmax(max0, x0, full)
++                max1 = S.vmax(max1, x1, full)
++                max2 = S.vmax(max2, x2, full)
++                max3 = S.vmax(max3, x3, full)
++            block_max = S.vmax(S.vmax(max0, max1, full), S.vmax(max2, max3, full), full)
++            if SCALE_AFTER_MAX:
++                block_max = S.vmuls(block_max, T.float32(scale), full)
++            previous_max = S.vld(m_ub[0], "NORM")
++            merged_max = S.vmax(previous_max, block_max, full)
++            alpha = S.vexpdif(previous_max, merged_max, full)
++            S.vsts(m_ub[0], merged_max, full, "NORM_B32")
++            S.vsts(alpha_ub[0], alpha, full, "NORM_B32")
++            sum0 = S.alloc_var("float32")
++            sum1 = S.alloc_var("float32")
++            sum2 = S.alloc_var("float32")
++            sum3 = S.alloc_var("float32")
++            sum0 = S.vdup(T.float32(0), "float32", full)
++            sum1 = S.vdup(T.float32(0), "float32", full)
++            sum2 = S.vdup(T.float32(0), "float32", full)
++            sum3 = S.vdup(T.float32(0), "float32", full)
++            dst = S.make_ubuf_ptr(T.access_ptr(P_nz_ub[0, 0], "w", BC + 1, ROWS), "bfloat16")
++            for r in range(0, BC, 4):
++                e0 = S.vexpdif(S.vmuls(S.vld(S_ub[r + 0, 0], "NORM"), T.float32(scale), full), merged_max, full)
++                sum0 = S.vadd(sum0, e0, full)
++                packed0 = S.vpack(T.reinterpret(S.vcvt(e0, "bfloat16", full, sat=False, part=0), "uint32x64"), 0)
++                dst = S.vsstb(T.reinterpret(packed0, "bfloat16x128"), dst, T.int32((BC + 1) << 16 | 1), packed_mask, update=True)
++                e1 = S.vexpdif(S.vmuls(S.vld(S_ub[r + 1, 0], "NORM"), T.float32(scale), full), merged_max, full)
++                sum1 = S.vadd(sum1, e1, full)
++                packed1 = S.vpack(T.reinterpret(S.vcvt(e1, "bfloat16", full, sat=False, part=0), "uint32x64"), 0)
++                dst = S.vsstb(T.reinterpret(packed1, "bfloat16x128"), dst, T.int32((BC + 1) << 16 | 1), packed_mask, update=True)
++                e2 = S.vexpdif(S.vmuls(S.vld(S_ub[r + 2, 0], "NORM"), T.float32(scale), full), merged_max, full)
++                sum2 = S.vadd(sum2, e2, full)
++                packed2 = S.vpack(T.reinterpret(S.vcvt(e2, "bfloat16", full, sat=False, part=0), "uint32x64"), 0)
++                dst = S.vsstb(T.reinterpret(packed2, "bfloat16x128"), dst, T.int32((BC + 1) << 16 | 1), packed_mask, update=True)
++                e3 = S.vexpdif(S.vmuls(S.vld(S_ub[r + 3, 0], "NORM"), T.float32(scale), full), merged_max, full)
++                sum3 = S.vadd(sum3, e3, full)
++                packed3 = S.vpack(T.reinterpret(S.vcvt(e3, "bfloat16", full, sat=False, part=0), "uint32x64"), 0)
++                dst = S.vsstb(T.reinterpret(packed3, "bfloat16x128"), dst, T.int32((BC + 1) << 16 | 1), packed_mask, update=True)
++            block_sum = S.vadd(S.vadd(sum0, sum1, full), S.vadd(sum2, sum3, full), full)
++            updated_sum = S.alloc_var(accum_dtype)
++            updated_sum = S.vld(l_ub[0], "NORM")
++            S.vmadd(updated_sum, alpha, block_sum, full)
++            S.vsts(l_ub[0], updated_sum, full, "NORM_B32")
+ 
+     @T.macro
+     def pack_p(P_nz_ub, P_shared):
+-        T.dual_copy(P_nz_ub[0:ROWS, 0:BC], P_shared[0:BR, 0:BC])
++        # Each AIV writes its KxQ panel; subcore 1 lands 8192 bf16 elements later.
++        T.dual_copy(P_nz_ub[0:BC, 0:ROWS], P_shared[0:BC, 0:BR])
+ 
+     @T.macro
+     def pv(kv, V, P_shared, V_shared, pv_a_l0, pv_b_l0, pv_acc_l0c, O_tmp_ub):
+         T.copy(V[kv * BC : (kv + 1) * BC, 0:D], V_shared[0:D, 0:BC], transpose=True)
+-        T.copy(P_shared[0:BR, 0:BC], pv_a_l0)
++        T.copy(P_shared[0:BC, 0:BR], pv_a_l0)
+         T.copy(V_shared[0:D, 0:BC], pv_b_l0)
+         T.gemm(
+             pv_a_l0,
+             pv_b_l0,
+             pv_acc_l0c,
++            transpose_A=True,
+             transpose_B=True,
+             clear_accum=True,
+             unit_flag_ctrl=3,
+@@ -288,7 +264,7 @@
+         with T.Stage(0):
+             T.copy(K[kv * BC : (kv + 1) * BC, 0:D], K_shared[0:BC, 0:D])
+         with T.Stage(1):
+-            T.copy(K_shared[0:BC, 0:D], qk_b_l0)
++            T.copy(K_shared[0:BC, 0:D], qk_a_l0)
+             T.gemm(
+                 qk_a_l0,
+                 qk_b_l0,
+@@ -298,7 +274,7 @@
+                 unit_flag_ctrl=3,
+             )
+         with T.Stage(3):
+-            T.dual_copy(qk_acc_l0c, S_ub[0:ROWS, 0:BC], unit_flag_ctrl=3)
++            T.dual_copy(qk_acc_l0c, S_ub[0:BC, 0:ROWS], unit_flag_ctrl=3)
+         with T.Stage(5):
+             softmax(S_ub, P_nz_ub, m_ub, l_ub, alpha_ub, old_m_ub, row_sum_ub)
+         with T.Stage(6):
+@@ -306,12 +282,13 @@
+         with T.Stage(3):
+             T.copy(V[kv * BC : (kv + 1) * BC, 0:D], V_shared[0:D, 0:BC], transpose=True)
+         with T.Stage(6):
+-            T.copy(P_shared[0:BR, 0:BC], pv_a_l0)
++            T.copy(P_shared[0:BC, 0:BR], pv_a_l0)
+             T.copy(V_shared[0:D, 0:BC], pv_b_l0)
+             T.gemm(
+                 pv_a_l0,
+                 pv_b_l0,
+                 pv_acc_l0c,
++                transpose_A=True,
+                 transpose_B=True,
+                 clear_accum=True,
+                 unit_flag_ctrl=3,
+@@ -398,8 +375,8 @@
+                 qk_acc_l0c = T.alloc_l0c((BR, BC), accum_dtype)
+                 pv_acc_l0c = T.alloc_l0c((BR, D), accum_dtype)
+ 
+-                S_ub = T.alloc_shared((ROWS, BC), accum_dtype)
+-                P_nz_ub = T.alloc_shared((ROWS + 1, BC), dtype)
++                S_ub = T.alloc_shared((BC, ROWS), accum_dtype)
++                P_nz_ub = T.alloc_shared((BC + 1, ROWS), dtype)
+                 T.annotate_layout({P_nz_ub: make_ascend_compact_nz_layout(P_nz_ub)})
+                 O_tmp_ub = T.alloc_shared((ROWS, D), accum_dtype)
+                 O_ub = T.alloc_shared((ROWS, D), accum_dtype)
+@@ -410,8 +387,8 @@
+                 row_sum_ub = T.alloc_shared((ROWS,), accum_dtype)
+                 T.annotate_buffer_versions(
+                     {
+-                        # One Q slot stays live across all KV iterations.
+-                        qk_a_l0: 1,
++                        # Resident Q now lives in L0B for K @ Q^T.
++                        qk_b_l0: 1,
+                         K_shared: 3,
+                         V_shared: 3,
+                         qk_acc_l0c: 2,
+@@ -426,8 +403,8 @@
+                 for local_mt in T.serial(M_TILES_PER_BLOCK):
+                     mt = bx * M_TILES_PER_BLOCK + local_mt
+                     T.copy(Q[mt * BR : (mt + 1) * BR, 0:D], Q_shared[0:BR, 0:D])
+-                    # Load Q into L0A once; qk() does not overwrite it in the KV loop.
+-                    T.copy(Q_shared[0:BR, 0:D], qk_a_l0)
++                    # Load Q into L0B once; qk() does not overwrite it in the KV loop.
++                    T.copy(Q_shared[0:BR, 0:D], qk_b_l0)
+ 
+                     init_m_l(m_ub, l_ub)
+                     clear_O_ub(O_ub)
+@@ -492,8 +469,8 @@
+             qk_acc_l0c = T.alloc_l0c((BR, BC), accum_dtype)
+             pv_acc_l0c = T.alloc_l0c((BR, D), accum_dtype)
+ 
+-            S_ub = T.alloc_shared((ROWS, BC), accum_dtype)
+-            P_nz_ub = T.alloc_shared((ROWS + 1, BC), dtype)
++            S_ub = T.alloc_shared((BC, ROWS), accum_dtype)
++            P_nz_ub = T.alloc_shared((BC + 1, ROWS), dtype)
+             T.annotate_layout({P_nz_ub: make_ascend_compact_nz_layout(P_nz_ub)})
+             O_tmp_ub = T.alloc_shared((ROWS, D), accum_dtype)
+             O_ub = T.alloc_shared((ROWS, D), accum_dtype)
+@@ -504,8 +481,8 @@
+             row_sum_ub = T.alloc_shared((ROWS,), accum_dtype)
+             T.annotate_buffer_versions(
+                 {
+-                    # One Q slot stays live across all KV iterations.
+-                    qk_a_l0: 1,
++                    # Resident Q now lives in L0B for K @ Q^T.
++                    qk_b_l0: 1,
+                     K_shared: 3,
+                     V_shared: 3,
+                     qk_acc_l0c: 2,
+@@ -520,8 +497,8 @@
+             for local_mt in T.serial(M_TILES_PER_BLOCK):
+                 mt = bx * M_TILES_PER_BLOCK + local_mt
+                 T.copy(Q[mt * BR : (mt + 1) * BR, 0:D], Q_shared[0:BR, 0:D])
+-                # Load Q into L0A once; qk() does not overwrite it in the KV loop.
+-                T.copy(Q_shared[0:BR, 0:D], qk_a_l0)
++                # Load Q into L0B once; qk() does not overwrite it in the KV loop.
++                T.copy(Q_shared[0:BR, 0:D], qk_b_l0)
+ 
+                 init_m_l(m_ub, l_ub)
+                 clear_O_ub(O_ub)
